@@ -16,7 +16,7 @@ export type ArgDef = { name: string; type: "int" | "float" | "bool" | "choice"; 
 export type EngineDef = { name: string; kind: string; models: string[]; versions: Record<string, { args: ArgDef[] }> };
 export type Prebuilt = { id: string; name: string; note: string; machine: Machine };
 export type Catalog = { cpus: Cpu[]; gpus: Gpu[]; ssds: Ssd[]; ram_speeds: Record<string, number[]>;
-  prebuilts: Prebuilt[]; soc_ram_gb: Record<string, number[]>;
+  prebuilts: Prebuilt[]; soc_ram_gb: Record<string, number[]>; soc_gpu_for: Record<string, string>;
   ram_sizes_gb: number[]; pcie_lane_gbs: Record<string, number>; models: Model[]; quants: Record<string, number>;
   engines: Record<string, EngineDef> };
 
@@ -122,6 +122,26 @@ export async function api<T>(path: string, body?: unknown): Promise<T> {
   return r.json();
 }
 
+// ---------------------------------------------------------------- machine invariants
+/** The UI always works with two CPU slots; the second is disabled unless a two-socket CPU enables it.
+ *  Prebuilts and older files may carry one slot. */
+export function normalizeMachine(m: Machine): Machine {
+  const out = structuredClone(m);
+  if (!out.cpus.length) out.cpus = [structuredClone(DEFAULT_MACHINE.cpus[0])];
+  if (out.cpus.length < 2) out.cpus.push({ ...out.cpus[0], enabled: false });
+  out.cpus = out.cpus.slice(0, 2);
+  out.cpus[0].enabled = true;
+  out.os = out.os ?? "linux";
+  out.nvlinks = out.nvlinks ?? [];
+  return out;
+}
+
+/** Engines keep only GPUs and storage that still exist in the machine. */
+function pruneEngines(engines: EngineSpec[], m: Machine): EngineSpec[] {
+  const ids = new Set(m.devices.map((d) => d.id));
+  return engines.map((e) => ({ ...e, gpus: e.gpus.filter((g) => ids.has(g)), storage: e.storage && ids.has(e.storage) ? e.storage : null }));
+}
+
 // ---------------------------------------------------------------- config files
 export type ConfigFile = { app: "rigsim"; version: 1; saved: string; machine: Machine; engines: EngineSpec[];
   roles: Roles; workload: Workload; concurrency: number[]; scenarios: number };
@@ -183,7 +203,7 @@ export const useStore = create<State>()(
       scenarios: 12,
       results: null,
       setCatalog: (catalog) => set({ catalog }),
-      setMachine: (machine) => set({ machine, results: null }),
+      setMachine: (machine) => set((s) => { const m = normalizeMachine(machine); return { machine: m, engines: pruneEngines(s.engines, m), results: null }; }),
       setEngines: (engines) => set({ engines, results: null }),
       setRoles: (roles) => set({ roles, results: null }),
       setWorkload: (workload) => set({ workload, results: null }),
@@ -192,16 +212,18 @@ export const useStore = create<State>()(
       setResults: (results) => set({ results }),
       reset: () => set({ machine: DEFAULT_MACHINE, engines: DEFAULT_ENGINES, roles: DEFAULT_ROLES,
         workload: DEFAULT_WORKLOAD, concurrency: [1, 2, 4], scenarios: 12, results: null }),
-      loadConfig: (c) => set({ machine: c.machine, engines: c.engines, roles: c.roles, workload: c.workload,
-        concurrency: c.concurrency, scenarios: c.scenarios, results: null }),
-      loadPrebuilt: (m) => set((s) => {
-        const ids = new Set(m.devices.map((d) => d.id));
-        return { machine: structuredClone(m), results: null,
-          engines: s.engines.map((e) => ({ ...e, gpus: e.gpus.filter((g) => ids.has(g)),
-            storage: e.storage && ids.has(e.storage) ? e.storage : null })) };
-      }),
+      loadConfig: (c) => set(() => { const m = normalizeMachine(c.machine); return { machine: m, engines: pruneEngines(c.engines, m),
+        roles: c.roles, workload: c.workload, concurrency: c.concurrency, scenarios: c.scenarios, results: null }; }),
+      loadPrebuilt: (m) => set((s) => { const n = normalizeMachine(m); return { machine: n, engines: pruneEngines(s.engines, n), results: null }; }),
     }),
-    { name: "rigsim", partialize: (s) => ({ machine: s.machine, engines: s.engines, roles: s.roles,
+    { name: "rigsim",
+      merge: (persisted, current) => {
+        const p = (persisted ?? {}) as Partial<State>;
+        const merged = { ...current, ...p } as State;
+        if (merged.machine) merged.machine = normalizeMachine(merged.machine);
+        return merged;
+      },
+      partialize: (s) => ({ machine: s.machine, engines: s.engines, roles: s.roles,
       workload: s.workload, concurrency: s.concurrency, scenarios: s.scenarios }) },
   ),
 );

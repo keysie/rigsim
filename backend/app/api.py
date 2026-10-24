@@ -20,7 +20,8 @@ def catalog():
     from .catalog.gpus import GPU_BY_ID
     return {"cpus": [CPU_BY_ID[r[0]] for r in CPUS], "gpus": [GPU_BY_ID[r[0]] for r in GPUS],
             "ssds": [dict(zip(SSD_FIELDS, r)) for r in SSDS], "ram_speeds": RAM_SPEEDS, "ram_sizes_gb": RAM_SIZES_GB,
-            "pcie_lane_gbs": PCIE_LANE_GBS, "prebuilts": PREBUILTS, "soc_ram_gb": __import__("app.catalog.cpus", fromlist=["SOC_RAM_GB"]).SOC_RAM_GB, "models": MODELS, "quants": QUANTS, "engines": ENGINES}
+            "pcie_lane_gbs": PCIE_LANE_GBS, "prebuilts": PREBUILTS, "soc_ram_gb": __import__("app.catalog.cpus", fromlist=["SOC_RAM_GB"]).SOC_RAM_GB,
+            "soc_gpu_for": __import__("app.catalog.gpus", fromlist=["SOC_GPU_FOR"]).SOC_GPU_FOR, "models": MODELS, "quants": QUANTS, "engines": ENGINES}
 
 
 def machine_validate(body):
