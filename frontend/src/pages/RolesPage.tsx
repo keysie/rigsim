@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, useStore, WORKLOAD_HELP, type Range, type RoleName, type Workload } from "../store";
 import { Bar, Field, Notices, Select } from "../components/ui";
 
@@ -21,6 +21,12 @@ type Result = {
 
 export default function RolesPage() {
   const s = useStore();
+  const engineIds = new Set(s.engines.map((e) => e.id));
+  const stale = Object.entries(s.roles).filter(([, v]) => v && !engineIds.has(v));
+  useEffect(() => {
+    if (stale.length) s.setRoles(Object.fromEntries(Object.entries(s.roles).map(([k, v]) => [k, v && engineIds.has(v) ? v : null])) as typeof s.roles);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stale.length]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const res = s.results as Result | null;
@@ -46,7 +52,7 @@ export default function RolesPage() {
           <div key={r.id} className="rounded border border-line bg-panel p-3">
             <div className="font-medium">{r.title}</div>
             <div className="text-xs text-muted mb-2">{r.blurb}</div>
-            <Select value={s.roles[r.id] ?? ""} options={[{ value: "", label: r.id === "maker" ? "choose an engine" : "none" },
+            <Select value={engineIds.has(s.roles[r.id] ?? "") ? s.roles[r.id] ?? "" : ""} options={[{ value: "", label: r.id === "maker" ? "choose an engine" : "none" },
               ...s.engines.map((e) => ({ value: e.id, label: e.name || e.id }))]}
                     onChange={(v) => s.setRoles({ ...s.roles, [r.id]: v || null })} />
           </div>
@@ -90,6 +96,7 @@ export default function RolesPage() {
           <input type="number" value={s.scenarios} min={1} max={60} className="w-24" onChange={(e) => s.setScenarios(Number(e.target.value))} />
         </Field>
         <button className="btn btn-primary" onClick={run} disabled={busy || !s.roles.maker}>{busy ? "Simulating…" : "Simulate"}</button>
+        {!s.roles.maker && <span className="text-sm text-amber">No engine is assigned to the maker role — pick one above (add engines on the Engines page).</span>}
         {!s.roles.maker && <span className="text-sm text-amber">Choose a maker engine first.</span>}
       </div>
       {err && <Notices errors={[err]} warnings={[]} />}

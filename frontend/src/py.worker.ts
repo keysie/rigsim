@@ -3,9 +3,13 @@
 type Msg = { id: number; path: string; body?: unknown; indexURL?: string };
 let ready: Promise<(path: string, body?: string) => string> | null = null;
 
+const tell = (boot: string) => (self as unknown as Worker).postMessage({ id: -1, boot });
+
 async function boot(indexURL: string) {
+  tell("downloading the Python runtime (~10 MB, cached after the first visit)");
   const mod = await import(/* @vite-ignore */ indexURL + "pyodide/pyodide.mjs");
   const py = await mod.loadPyodide({ indexURL: indexURL + "pyodide/" });
+  tell("loading the simulator");
   const manifest = await (await fetch(indexURL + "py/manifest.json")).json() as { files: string[] };
   py.FS.mkdirTree("/sim");
   for (const f of manifest.files) {
@@ -14,6 +18,7 @@ async function boot(indexURL: string) {
     py.FS.mkdirTree(dir);
     py.FS.writeFile("/sim/" + f, text);
   }
+  tell("first start of the model");
   py.runPython("import sys; sys.path.insert(0, '/sim')");
   const call = py.pyimport("app.api").call as (path: string, body?: string) => string;
   try {
