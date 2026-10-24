@@ -7,8 +7,11 @@ the derived values. Records never change the model's constants by themselves.
 """
 from __future__ import annotations
 
+import datetime
 import hashlib
 import json
+import math
+import re
 import statistics as st
 
 from .catalog.cpus import CPU_BY_ID
@@ -50,6 +53,57 @@ def record_id(rec: dict) -> str:
     return f"{k['engine']}-{k['model']}-{k['quant']}-{gpu}-s{k['streams']}-{h}"
 
 
+def _int_in(v, lo, hi):
+    return isinstance(v, int) and not isinstance(v, bool) and lo <= v <= hi
+
+
+def _strict(rec: dict) -> list[str]:
+    """Hard rules for what a record may contain. Anything that would poison the clusters is an error,
+    not a warning: non-finite or non-positive results, impossible run counts, invented dates."""
+    errs = []
+    if rec.get("format") != "rigsim-measurement/1":
+        errs.append("format must be 'rigsim-measurement/1'")
+    m = rec["method"]
+    if "runs" in m and not _int_in(m["runs"], 1, 1000):
+        errs.append("method.runs must be a whole number from 1 to 1000")
+    if "streams" in m and not _int_in(m["streams"], 1, 256):
+        errs.append("method.streams must be a whole number from 1 to 256")
+    if m.get("context") not in (None, "") and not _int_in(m["context"], 0, 4_000_000):
+        errs.append("method.context must be a whole number of tokens, 0 to 4,000,000")
+    pl = m.get("power_limit_w")
+    if pl not in (None, "") and not (isinstance(pl, (int, float)) and not isinstance(pl, bool) and 0 < pl <= 1500):
+        errs.append("method.power_limit_w must be a number of watts, above 0 and at most 1500")
+    d = m.get("date")
+    if d not in (None, ""):
+        ok = isinstance(d, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", d) is not None
+        if ok:
+            try:
+                ok = datetime.date.fromisoformat(d) <= datetime.date.today() + datetime.timedelta(days=1)
+            except ValueError:
+                ok = False
+        if not ok:
+            errs.append("method.date must be a real date as YYYY-MM-DD, not in the future")
+    sub = m.get("submitter")
+    if sub not in (None, ""):
+        if not isinstance(sub, str) or len(sub) > 40:
+            errs.append("method.submitter must be a short alias (at most 40 characters)")
+        elif "@" in sub or "http" in sub.lower() or "/" in sub:
+            errs.append("method.submitter must be an alias: no addresses, links or paths")
+    if m.get("notes") not in (None, "") and (not isinstance(m["notes"], str) or len(m["notes"]) > 500):
+        errs.append("method.notes must be text of at most 500 characters")
+    for k, v in rec["results"].items():
+        if k not in RESULT_KEYS:
+            continue
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
+            errs.append(f"results.{k} must be a finite number")
+        elif k == "hit":
+            if not 0 <= v <= 1:
+                errs.append("results.hit must be between 0 and 1")
+        elif v <= 0:
+            errs.append(f"results.{k} must be above 0 (leave it out if you did not measure it)")
+    return errs
+
+
 def validate_record(rec: dict) -> dict:
     """Returns {ok, errors, warnings, id, key, derived}; derived = what the model says for the same setup."""
     errors, warnings = [], []
@@ -58,6 +112,7 @@ def validate_record(rec: dict) -> dict:
             errors.append(f"missing section '{part}'")
     if errors:
         return {"ok": False, "errors": errors, "warnings": warnings}
+    errors += _strict(rec)
     try:
         m = Machine.model_validate(rec["machine"])
         info = validate(m)
@@ -82,7 +137,8 @@ def validate_record(rec: dict) -> dict:
             warnings.append(f"method.{f} missing (lowers the trust score)")
         elif not isinstance(v, t):
             errors.append(f"method.{f} should be {t if isinstance(t, type) else 'a number'}")
-    if int(rec["method"].get("runs", 0) or 0) < 3:
+    runs = rec["method"].get("runs")
+    if isinstance(runs, int) and not isinstance(runs, bool) and runs < 3:
         warnings.append("fewer than 3 runs: medians are not meaningful")
     res = rec["results"]
     if not any(k in res and res[k] for k in RESULT_KEYS):

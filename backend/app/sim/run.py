@@ -117,7 +117,7 @@ def simulate(req: SimRequest) -> dict:
         for g in pf.resources.get("gpus", []):
             gpu_users.setdefault(g, []).append(eid)
     shared = {g: u for g, u in gpu_users.items() if len(u) > 1}
-    warnings = list(info["warnings"])
+    warnings = list(info["warnings"]) + [f"workload: {n}" for n in getattr(req.workload, "notes", [])]
     names = {e.id: (e.name or e.id) for e in req.engines}
     for g, u in shared.items():
         used = sum(float(perfs[e].memory.get(g, {}).get("used_gb", 0)) for e in u)

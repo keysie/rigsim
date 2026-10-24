@@ -93,6 +93,34 @@ def _nvlinked(gpus, machine_info):
     return all(frozenset((a, b)) in pairs for a, b in zip(ids, ids[1:]))
 
 
+def _finite(v, default):
+    """A usable number: None, NaN, inf, text and booleans fall back to the default."""
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return default
+    if isinstance(v, bool) or f != f or f in (float("inf"), float("-inf")):
+        return default
+    return f
+
+
+def _clamp_args(p, args, schema):
+    """Keep every numeric argument inside its schema range (the UI's min/max are not enforced on typing).
+    Values that are not numbers fall back to the default; changed values are reported in the notes."""
+    for a in schema:
+        if a["type"] not in ("int", "float") or a["name"] not in args:
+            continue
+        raw = args[a["name"]]
+        v = _finite(raw, a["default"])
+        lo, hi = a.get("min", 0), a.get("max", 10_000_000)
+        c = min(max(v, lo), hi)
+        if a["type"] == "int":
+            c = int(round(c))
+        if c != raw:
+            p.notes.append(f"{a['name']}: {raw!r} is outside {lo}–{hi} or not a number; using {c}")
+        args[a["name"]] = c
+
+
 def derive(spec, machine_info) -> EnginePerf:
     eng = ENGINES.get(spec.engine)
     p = EnginePerf(engine_id=spec.id, kind="batch")
@@ -109,10 +137,12 @@ def derive(spec, machine_info) -> EnginePerf:
     if spec.model_id not in eng["models"]:
         p.errors.append(f"{eng['name']} cannot serve {model['name']}")
         return p
-    args = {a["name"]: a["default"] for a in eng["versions"][spec.version]["args"]}
+    schema = eng["versions"][spec.version]["args"]
+    args = {a["name"]: a["default"] for a in schema}
     args.update(spec.args or {})
+    _clamp_args(p, args, schema)
     args["_version"] = spec.version
-    args["_cores"] = max(1, int(spec.cpu_cores or 1))
+    args["_cores"] = max(1, min(4096, int(_finite(spec.cpu_cores, 1))))
     try:
         if spec.engine == "hosted-api":
             return _apply_benchmarks(_hosted(p, args, model), spec)
@@ -131,6 +161,9 @@ def derive(spec, machine_info) -> EnginePerf:
         return r
     except ValueError as e:
         p.errors.append(str(e))
+        return p
+    except Exception as e:  # noqa: BLE001 - one broken engine must not blank the others
+        p.errors.append(f"internal error while deriving this engine ({type(e).__name__}: {e}); please report it with the settings used")
         return p
 
 
@@ -151,7 +184,11 @@ def _watts(p: EnginePerf, gpus, cpu, info) -> None:
 def _apply_benchmarks(p: EnginePerf, spec) -> EnginePerf:
     """Measured values the user entered replace the derived ones. A measured writing rate for
     one count of parallel requests rescales the whole table; measured counts stay as given."""
-    b = {k: float(v) for k, v in (spec.benchmarks or {}).items() if v not in (None, "", 0)}
+    b = {}
+    for k, v in (spec.benchmarks or {}).items():
+        f = _finite(v, 0.0)
+        if f > 0:
+            b[k] = f
     if not b or p.errors:
         return p
     measured = {int(k.split("_")[1]): v for k, v in b.items() if k.startswith("decode_") and k.split("_")[1].isdigit()}
