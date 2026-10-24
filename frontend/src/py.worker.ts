@@ -10,19 +10,23 @@ async function boot(indexURL: string) {
   const mod = await import(/* @vite-ignore */ indexURL + "pyodide/pyodide.mjs");
   const py = await mod.loadPyodide({ indexURL: indexURL + "pyodide/" });
   tell("loading the simulator");
-  const manifest = await (await fetch(indexURL + "py/manifest.json")).json() as { files: string[] };
+  // the manifest is always revalidated; every module is fetched under its content hash, so a new deploy can
+  // never be combined with old modules from the browser cache
+  const manifest = await (await fetch(indexURL + "py/manifest.json", { cache: "no-cache" })).json() as { build: string; files: { path: string; v: string }[] };
   py.FS.mkdirTree("/sim");
   for (const f of manifest.files) {
-    const text = await (await fetch(indexURL + "py/" + f)).text();
-    const dir = "/sim/" + f.split("/").slice(0, -1).join("/");
+    const text = await (await fetch(indexURL + "py/" + f.path + "?v=" + f.v)).text();
+    const dir = "/sim/" + f.path.split("/").slice(0, -1).join("/");
     py.FS.mkdirTree(dir);
-    py.FS.writeFile("/sim/" + f, text);
+    py.FS.writeFile("/sim/" + f.path, text);
   }
+  (self as unknown as Worker).postMessage({ id: -1, build: manifest.build });
   tell("first start of the model");
   py.runPython("import sys; sys.path.insert(0, '/sim')");
   const call = py.pyimport("app.api").call as (path: string, body?: string) => string;
   try {
-    const recs = await (await fetch(indexURL + "measurements/records.json")).text();
+    const rv = await (await fetch(indexURL + "measurements/version.txt", { cache: "no-cache" })).text();
+    const recs = await (await fetch(indexURL + "measurements/records.json?v=" + rv.trim())).text();
     call("/api/measurements/load", recs);
   } catch { /* no records shipped: the app works without them */ }
   return call;

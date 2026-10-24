@@ -95,7 +95,11 @@ let seq = 0;
 const pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
 export const runsInBrowser = !API_BASE;
 
+import { BUILD_ID } from "./build-id";
+
 export let bootPhase = "starting";
+/** Set when the simulator files on the server belong to a different build than this page: a reload fixes it. */
+export let staleBuild: string | null = null;
 const bootListeners = new Set<(s: string) => void>();
 export function onBootPhase(fn: (s: string) => void) { bootListeners.add(fn); return () => { bootListeners.delete(fn); }; }
 function setBoot(s: string) { bootPhase = s; bootListeners.forEach((f) => f(s)); }
@@ -103,8 +107,9 @@ function setBoot(s: string) { bootPhase = s; bootListeners.forEach((f) => f(s));
 function getWorker(): Worker {
   if (!worker) {
     worker = new Worker(new URL("./py.worker.ts", import.meta.url), { type: "module" });
-    worker.onmessage = (e: MessageEvent<{ id: number; result?: unknown; error?: string; boot?: string }>) => {
+    worker.onmessage = (e: MessageEvent<{ id: number; result?: unknown; error?: string; boot?: string; build?: string }>) => {
       if (e.data.boot) { setBoot(e.data.boot); return; }
+      if (e.data.build) { if (e.data.build !== BUILD_ID) { staleBuild = e.data.build; setBoot("stale"); } return; }
       const p = pending.get(e.data.id);
       if (!p) return;
       pending.delete(e.data.id);
