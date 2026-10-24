@@ -110,7 +110,7 @@ cd frontend && npm run dev                  # Vite dev server; runs Python in th
 VITE_API_BASE=http://127.0.0.1:8080 npm run dev   # ...or against the dev server
 ```
 
-Browser walkthrough (29 checks across every page, in Chromium, against the built site; a CI job for it is proposed in PR #3):
+Browser walkthrough (29 checks across every page, in Chromium, against the built site; also a CI job):
 `cd frontend && npm run build && (cd dist && python3 -m http.server 8090 &) && npx playwright-core install chromium && npm run e2e`.
 
 Tests: `cd backend && python -m pytest -q` (machine rules, calibration bounds, API; 20) and
