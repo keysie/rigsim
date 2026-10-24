@@ -136,7 +136,8 @@ class BatchEngine(Engine):
     requests at once, each writing at the per-request speed for that many writers; prompts
     read one at a time at the shared rate (hosted: in parallel)."""
 
-    def __init__(self, perf, reuse=True):
+    def __init__(self, perf, reuse=True, priority=False):
+        self.priority = priority
         super().__init__(perf.engine_id)
         self.perf = perf
         self.conc = max(1, perf.max_parallel if perf.kind != "batch" else perf.slots)
@@ -160,7 +161,12 @@ class BatchEngine(Engine):
             return
         self.queue.append(job)
 
+    PRIORITY = {"guard": 0, "judge": 0, "rerank": 1, "maker": 2, "sub": 3, "coordinator": 3}
+
     def admit(self, now):
+        if self.priority and len(self.queue) > 1:
+            # vLLM --scheduling-policy priority: short, latency-bound calls (guard, judge) go first; FCFS otherwise
+            self.queue.sort(key=lambda j: (self.PRIORITY.get(j.req.kind, 2), j.t_submit))
         while self.queue and len(self.active) < self.conc:
             job = self.queue.pop(0)
             r = job.req

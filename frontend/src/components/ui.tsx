@@ -1,6 +1,7 @@
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
-export function Field({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) {
+export function Field({ label, children, hint }: { label: string; children: ReactNode; hint?: ReactNode }) {
   return (
     <label className="flex flex-col gap-1">
       <span>{label}</span>
@@ -58,5 +59,28 @@ export function Bar({ value, max, label, danger }: { value: number; max: number;
       </div>
       <span className="text-muted whitespace-nowrap">{label}</span>
     </div>
+  );
+}
+
+
+/** A number field that keeps what the user types, sends only usable numbers (clamped to min/max) to the store,
+ *  and shows the stored value again when the field loses focus. Typing past the limits cannot reach the model. */
+export function NumInput({ value, onChange, min, max, step, int = true, allowEmpty = false, className, placeholder, ...rest }: {
+  value: number | null | undefined; onChange: (v: number | null) => void; min?: number; max?: number; step?: number | "any";
+  int?: boolean; allowEmpty?: boolean; className?: string; placeholder?: string; "aria-label"?: string; disabled?: boolean;
+}) {
+  const show = (v: number | null | undefined) => (v == null || !Number.isFinite(v) ? "" : String(v));
+  const [text, setText] = useState(show(value));
+  const [focus, setFocus] = useState(false);
+  useEffect(() => { if (!focus) setText(show(value)); }, [value, focus]);
+  const clamp = (n: number) => { let x = int ? Math.round(n) : n; if (min != null) x = Math.max(min, x); if (max != null) x = Math.min(max, x); return x; };
+  return (
+    <input type="number" {...rest} className={className} placeholder={placeholder} value={text} min={min} max={max} step={step}
+           onFocus={() => setFocus(true)} onBlur={() => setFocus(false)}
+           onChange={(e) => {
+             const t = e.target.value; setText(t);
+             if (t === "") { if (allowEmpty) onChange(null); return; }
+             const n = Number(t); if (Number.isFinite(n)) onChange(clamp(n));
+           }} />
   );
 }

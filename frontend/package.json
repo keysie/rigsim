@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "sync-py": "node scripts/sync-py.mjs",
-    "e2e": "node e2e/walkthrough.mjs"
+    "e2e": "node e2e/all.mjs"
   },
   "dependencies": {
     "@fontsource/ibm-plex-sans": "^5.3.0",

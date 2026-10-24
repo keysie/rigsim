@@ -39,7 +39,7 @@ def make_sim_engines(perfs, replay):
     for eid, pf in perfs.items():
         if pf.errors:
             continue
-        out[eid] = StrataEngine(pf, replay_thinking=replay) if pf.kind == "strata" else BatchEngine(pf)
+        out[eid] = StrataEngine(pf, replay_thinking=replay) if pf.kind == "strata" else BatchEngine(pf, priority=pf.memory.get("scheduling_policy") == "priority")
     return out
 
 
