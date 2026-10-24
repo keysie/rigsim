@@ -197,6 +197,10 @@ export default function MachinePage() {
                       </div>
                       <LinkRow d={d} maxGen={spec.pcie_gen} maxWidth={spec.pcie_lanes} dv={dv} activeCpus={activeCpus.map((c) => c.i)} setDevice={setDevice} />
                       <PowerRow d={d} dv={dv as DevInfo | undefined} setDevice={setDevice} />
+                      <label className="mt-2 flex items-center gap-2 text-xs">
+                        <input type="checkbox" aria-label={`display on ${d.id}`} checked={Boolean(d.display)} onChange={(ev) => setDevice(d.id, (x) => { x.display = ev.target.checked; })} />
+                        a screen / desktop is attached to this card <span className="text-muted">(reserves VRAM: ~0.45 GB Linux, ~1.3 GB Windows)</span>
+                      </label>
                     </div>
                   </div>
                 );

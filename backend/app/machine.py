@@ -131,7 +131,7 @@ def validate(m: Machine) -> dict:
         idle_w = round((spec["tdp_w"] if d.kind == "gpu" else 5) * (0.08 if spec.get("form") == "soc" else 0.07), 1)
         devices[d.id] = dict(id=d.id, kind=d.kind, model_id=d.model_id, name=spec["name"], cpu=d.cpu, link_gen=gen,
                              link_width=width, link_bw_gbs=round(bw, 2), link_type=link_type, spec=spec, capacity_tb=d.capacity_tb,
-                             power_w=power_w, power_range=power_range(spec) if d.kind == "gpu" else None,
+                             power_w=power_w, power_range=power_range(spec) if d.kind == "gpu" else None, display=bool(getattr(d, "display", False)),
                              power_bw_factor=round(pf[0], 3), power_compute_factor=round(pf[1], 3), idle_w=idle_w)
         cpu["devices"].append(d.id)
 

@@ -22,12 +22,12 @@ export type Catalog = { cpus: Cpu[]; gpus: Gpu[]; ssds: Ssd[]; ram_speeds: Recor
 
 // ---------------------------------------------------------------- config types
 export type CpuSlot = { cpu_id: string; enabled: boolean; ram_gb: number; ram_mts: number; ram_channels: number };
-export type Device = { id: string; kind: "gpu" | "ssd"; model_id: string; cpu: number; link_gen: number; link_type?: string; power_w?: number | null;
+export type Device = { id: string; kind: "gpu" | "ssd"; model_id: string; cpu: number; link_gen: number; link_type?: string; power_w?: number | null; display?: boolean;
   link_width: number; capacity_tb?: number | null };
 export type Machine = { os: "linux" | "windows"; cpus: CpuSlot[]; devices: Device[]; nvlinks: [string, string][] };
 export type EngineSpec = { id: string; name: string; engine: string; version: string; model_id: string;
   args: Record<string, unknown>; gpus: string[]; cpu: number; cpu_cores: number; storage: string | null;
-  benchmarks?: Record<string, number | null> };
+  benchmarks?: Record<string, number | null>; fixed?: Record<string, number | null> };
 export type RoleName = "coordinator" | "maker" | "sub" | "guard" | "judge" | "reranker";
 export type Roles = Record<RoleName, string | null>;
 export type Range = [number, number];
