@@ -115,6 +115,27 @@ def layer_overhead_factor(gpu: dict) -> float:
     return 1.5 if gpu["vendor"] == "Apple" else 1.0
 
 
+def power_range(gpu: dict) -> tuple[int, int] | None:
+    """Settable power-limit range (W) for cards that expose one; None for SoCs and modules without a user cap.
+    Lower bound: what vendors allow via nvidia-smi / rocm-smi, roughly 45–60 % of the default limit."""
+    if gpu["form"] == "soc" or gpu["tdp_w"] <= 0:
+        return None
+    tdp = int(gpu["tdp_w"])
+    lo = {"NVIDIA": 0.5, "AMD": 0.6, "Intel": 0.6}.get(gpu["vendor"], 0.6)
+    return (int(round(tdp * lo / 5) * 5), tdp)
+
+
+def power_factors(gpu: dict, cap_w: float | None) -> tuple[float, float]:
+    """(bandwidth factor, compute factor) at a power cap. Decode is memory-bound and barely moves
+    (a 3090 at 250 W: ~-3 %); prompt processing follows the clock, which follows roughly the 0.4th
+    power of the cap (4090 at 300 W: ~-15 %). Above the default limit nothing is gained."""
+    rng = power_range(gpu)
+    if rng is None or cap_w is None:
+        return 1.0, 1.0
+    r = min(1.0, max(0.3, float(cap_w) / rng[1]))
+    return 1.0 - 0.1 * (1.0 - r), r ** 0.4
+
+
 # which SoC an integrated GPU belongs to; the GPU shares that CPU's memory pool
 SOC_GPU_FOR = {"gb10-gpu": "gb10", "m4-max-gpu": "apple-m4-max", "m3-ultra-gpu": "apple-m3-ultra",
                "m2-ultra-gpu": "apple-m2-ultra", "m5-max-gpu": "apple-m5-max", "m5-ultra-gpu": "apple-m5-ultra",

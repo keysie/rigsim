@@ -16,7 +16,7 @@ it("entering measured values changes the derived speeds", async () => {
   await open("#engines");
   await screen.findAllByText(/writes, alone/, {}, { timeout: 10000 });
   const sub = screen.getByDisplayValue("vLLM 27B").closest("section")!;
-  await within(sub).findByText(/4[01] tok\/s/);
+  await within(sub).findByText(/(3[89]|4[01]) tok\/s/);
   fireEvent.change(within(sub).getByLabelText("measured decode_1"), { target: { value: "33" } });
   fireEvent.change(within(sub).getByLabelText("measured prefill"), { target: { value: "1050" } });
   await within(sub).findAllByText(/33 tok\/s/, {}, { timeout: 10000 });

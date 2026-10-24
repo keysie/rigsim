@@ -74,14 +74,21 @@ def run_once(req, perfs, scenario, seed, n_ws, trace=None):
     durs = [t["end"] - t["start"] for t in tasks]
     m = {"tasks": len(tasks), "makespan_s": T, "tasks_per_h": len(tasks) / T * 3600,
          "task_med_s": pct(durs, .5), "task_p90_s": pct(durs, .9), "stopped": sim.stopped, "task_log": tasks}
+    m["attempts"] = sum(t.get("attempts", 1) for t in tasks)
     eng_stats = {}
     for eid, e in sim_engines.items():
         js = [j for j in sim.calls if j.engine == eid and j.t_done is not None]
         waits = [(j.t_admit if j.t_admit is not None else j.t_done) - j.t_submit for j in js]
+        tin = sum(j.prefill_tokens for j in js)
+        tout = sum(j.req.out for j in js)
+        pf = e.perf
+        watts = pf.watts_idle + (pf.watts_busy - pf.watts_idle) * (e.busy_time / T)      # average draw of its parts
         es = {"util": e.busy_time / T, "mean_active": e.work_time / T, "calls": len(js),
               "wait_med": pct(waits, .5), "wait_p90": pct(waits, .9),
               "reread_tokens": getattr(e, "reread_tokens", 0), "prefill_tokens": getattr(e, "prefill_total", 0),
-              "skipped": sum(1 for j in sim.calls if j.engine == eid and j.skipped)}
+              "skipped": sum(1 for j in sim.calls if j.engine == eid and j.skipped),
+              "tokens_in": tin, "tokens_out": tout, "tps_in": tin / T, "tps_out": tout / T, "tps": (tin + tout) / T,
+              "watts": 0.0 if pf.kind == "hosted" else watts, "watts_busy": pf.watts_busy}
         if isinstance(e, BatchEngine) and e.hosted:
             pr = e.perf.hosted_prices
             es["cost_usd"] = (e.tokens_in * pr["price_in"] + e.tokens_cached * pr["price_cached"]
@@ -139,6 +146,7 @@ def simulate(req: SimRequest) -> dict:
                "tasks_per_h": {"p10": pct([m["tasks_per_h"] for m in ms], .1), "p50": pct([m["tasks_per_h"] for m in ms], .5),
                                "p90": pct([m["tasks_per_h"] for m in ms], .9)},
                "task_p90_min": pct([m["task_p90_s"] / 60 for m in ms], .5),
+               "attempts_per_task": st.median(m["attempts"] / max(1, m["tasks"]) for m in ms),
                "task_med_min": pct([m["task_med_s"] / 60 for m in ms], .5),
                "engines": {}, "kinds": {}, "gpus": {}, "bottlenecks": []}
         for eid in perfs:
@@ -152,6 +160,7 @@ def simulate(req: SimRequest) -> dict:
                 res["kinds"][k] = {kk: st.median(v[kk] for v in vals) for kk in vals[0]}
         for g, users in gpu_users.items():
             res["gpus"][g] = min(1.0, sum(res["engines"].get(u, {}).get("util", 0) for u in users))
+        res["machine"] = _machine_totals(req, info, perfs, res)
         res["bottlenecks"] = _bottlenecks(req, perfs, res, shared)
         out["results"].append(res)
     out["warnings"] = warnings
@@ -178,6 +187,40 @@ def trace(req: SimRequest, concurrency: int, scenario_index: int = 0) -> dict:
             "makespan_s": m["makespan_s"], "tasks": m["task_log"], "events": events, "resources": resources,
             "engines": eng_stats, "gpus": [d.id for d in req.machine.devices if d.kind == "gpu"],
             "cpus": {str(i): {"name": c["name"], "cores": c["cores"], "ram_bw_gbs": c["ram_bw_gbs"]} for i, c in info["cpus"].items()}}
+
+
+def _machine_totals(req, info, perfs, res) -> dict:
+    """The headline numbers: tokens per second served by the local engines (prompt + output), watts the
+    machine draws on average (GPUs at idle or cap by busy share, CPU by its busy cores, 40 W for the rest),
+    tokens per second per watt, and one utilisation figure: the busy share of every GPU and of the CPU
+    pool, averaged over the parts (an idle 3060 counts as much as an idle 3090 — it is a parked asset)."""
+    local = {eid: e for eid, e in res["engines"].items() if perfs[eid].kind != "hosted"}
+    tps_in = sum(e["tps_in"] for e in local.values())
+    tps_out = sum(e["tps_out"] for e in local.values())
+    devices = info["_devices"]
+    gpu_watts, parts = 0.0, []
+    for gid, d in devices.items():
+        if d["kind"] != "gpu":
+            continue
+        busy = res["gpus"].get(gid, 0.0)
+        cap = d.get("power_w") or d["spec"]["tdp_w"]
+        gpu_watts += d.get("idle_w", 0.07 * d["spec"]["tdp_w"]) + (cap - d.get("idle_w", 0.07 * d["spec"]["tdp_w"])) * busy
+        parts.append(busy)
+    cpu_busy = 0.0
+    for eid, e in local.items():
+        cores = perfs[eid].resources.get("cores", 0) or 0
+        if cores and not perfs[eid].resources.get("gpus"):
+            cpu_busy += e["util"] * cores
+    cpu_cores = sum(c["cores"] for c in info["cpus"].values()) or 1
+    cpu_share = min(1.0, cpu_busy / cpu_cores)
+    cpu_tdp = sum(c.get("tdp_w", 0) for c in info["cpus"].values())
+    cpu_watts = cpu_tdp * (0.15 + 0.65 * cpu_share)
+    parts.append(cpu_share)
+    watts = gpu_watts + cpu_watts + 40.0
+    return {"tps_in": tps_in, "tps_out": tps_out, "tps": tps_in + tps_out, "watts": watts,
+            "tps_per_w": (tps_in + tps_out) / watts if watts else 0.0, "out_tps_per_w": tps_out / watts if watts else 0.0,
+            "utilisation": sum(parts) / len(parts) if parts else 0.0, "gpu_busy": {g: res["gpus"].get(g, 0.0) for g in res["gpus"]},
+            "cpu_busy": cpu_share, "attempts_per_task": res.get("attempts_per_task", 1.0)}
 
 
 def _bottlenecks(req, perfs, res, shared):

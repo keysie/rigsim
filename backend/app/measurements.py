@@ -26,10 +26,12 @@ OPTIONAL_METHOD = ("notes", "submitter", "raw_sha256", "engine_build")
 
 def record_key(rec: dict) -> dict:
     eng = rec["engine"]
-    gpus = sorted(d["model_id"] for d in rec["machine"].get("devices", []) if d.get("kind") == "gpu" and d["id"] in eng.get("gpus", []))
+    used = [d for d in rec["machine"].get("devices", []) if d.get("kind") == "gpu" and d["id"] in eng.get("gpus", [])]
+    gpus = sorted(d["model_id"] for d in used)
+    caps = sorted((d.get("power_w") or rec["method"].get("power_limit_w") or 0) for d in used)
     quant = str(eng.get("args", {}).get("quantization", _default_quant(eng)))
     return {"gpus": gpus, "engine": eng["engine"], "model": eng["model_id"], "quant": quant,
-            "streams": int(rec["method"].get("streams", 1))}
+            "streams": int(rec["method"].get("streams", 1)), "power_w": [int(c) for c in caps]}
 
 
 def _default_quant(eng):
@@ -180,8 +182,10 @@ def match(records_or_clusters: list[dict], machine: dict, engine: dict) -> list[
     for c in records_or_clusters:
         ck = c["key"]
         same_model = ck["engine"] == k["engine"] and ck["model"] == k["model"]
-        if same_model and ck["gpus"] == k["gpus"] and ck["quant"] == k["quant"]:
+        if same_model and ck["gpus"] == k["gpus"] and ck["quant"] == k["quant"] and ck.get("power_w", []) == k.get("power_w", []):
             exact.append({**c, "near": None})
+        elif same_model and ck["gpus"] == k["gpus"] and ck["quant"] == k["quant"]:
+            exact.append({**c, "near": f"other power cap ({', '.join(f'{w} W' if w else 'default' for w in ck.get('power_w', []))})"})
         elif same_model and ck["gpus"] == k["gpus"]:
             near.append({**c, "near": f"other quant ({ck['quant']})"})
         elif same_model and ck["quant"] == k["quant"] and set(ck["gpus"]) == set(k["gpus"]):

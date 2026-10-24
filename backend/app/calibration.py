@@ -11,11 +11,12 @@ from .perf import derive
 from .schemas import CpuSlot, EngineSpec, Machine, PcieDevice
 
 
-def machine(cpu, ram_gb, mts, ch, gpus, gen=4, widths=None, os="linux"):
+def machine(cpu, ram_gb, mts, ch, gpus, gen=4, widths=None, os="linux", power=None):
     widths = widths or [16] * len(gpus)
+    power = power or [None] * len(gpus)
     return validate(Machine(os=os, cpus=[CpuSlot(cpu_id=cpu, ram_gb=ram_gb, ram_mts=mts, ram_channels=ch)],
-                            devices=[PcieDevice(id=f"gpu-{i + 1}", kind="gpu", model_id=g, link_gen=gen, link_width=w)
-                                     for i, (g, w) in enumerate(zip(gpus, widths))]))
+                            devices=[PcieDevice(id=f"gpu-{i + 1}", kind="gpu", model_id=g, link_gen=gen, link_width=w, power_w=pw)
+                                     for i, (g, w, pw) in enumerate(zip(gpus, widths, power))]))
 
 
 def strata(info, n, cores, **args):
@@ -36,7 +37,7 @@ def vllm(info, model, gpus, **args):
 STRATA = "https://github.com/Niko1221/Strata/tree/main/bench/results/"
 SOURCES = {
     "box": dict(name="<keysie>", url=None, note="Bench passes 1–4 on the owner's box: i9-10900X, 4-ch DDR4-3200, 3 x RTX 3090 "
-                "(x16/x16/x8) + RTX 3060 (x4), Strata 0.1.43.1, vLLM 0.31.0, llama.cpp b11552, Linux."),
+                "(x16/x16/x8, power-limited to 250 W) + RTX 3060 (x4), Strata 0.1.43.1, vLLM 0.31.0, llama.cpp b11552, Linux."),
     "strata-3060": dict(name="Strata community report: RTX 3060 12 GB, Core i7-12700, 64 GB DDR4 (Windows)",
                         url=STRATA + "2026-10-09-community-rtx-3060-0141", note="Strata 0.1.41, four quants, 128→260K prompt sweep, MTP on/off."),
     "strata-4090": dict(name="Strata community report: RTX 4090, Ryzen 9 7950X, 46 GB (Linux)",
@@ -76,7 +77,8 @@ def add(group, label, modelled, measured, source="box"):
 
 def run():
     # --- the owner's box: i9-10900X, 4-ch DDR4-3200, 3 x 3090 (x16/x16/x8), 3060 x4 ----------------
-    box = machine("i9-10900x", 128, 3200, 4, ["rtx-3090", "rtx-3090", "rtx-3090", "rtx-3060-12g"], 3, [16, 16, 8, 4])
+    box = machine("i9-10900x", 128, 3200, 4, ["rtx-3090", "rtx-3090", "rtx-3090", "rtx-3060-12g"], 3, [16, 16, 8, 4],
+                  power=[250, 250, 250, None])      # the 3090s run power-limited to 250 W
     p = strata(box, 1, 9, batch=1)
     add("CAL", "box: Strata 1x3090 IQ3_S decode", p.decode_total[1], 95)
     add("CAL", "box: Strata 1x3090 prompt tok/s", p.prefill_rate, 1900)

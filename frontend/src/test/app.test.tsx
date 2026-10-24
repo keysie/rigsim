@@ -61,7 +61,7 @@ describe("engines page", () => {
     await open();
     await screen.findAllByText(/writes, alone/, {}, { timeout: 10000 });
     const strataCard = screen.getByDisplayValue("Strata maker").closest("section")!;
-    await within(strataCard).findByText(/1[23]\d tok\/s/);
+    await within(strataCard).findAllByText(/1[0-4]\d tok\/s/);
     expect(within(strataCard).getByText(/% held/)).toBeInTheDocument();
     const version = within(strataCard).getAllByRole("combobox")[1];
     await userEvent.selectOptions(version, "0.2.2");

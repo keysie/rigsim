@@ -14,7 +14,10 @@ const ROLES: { id: RoleName; title: string; blurb: string }[] = [
 type Result = {
   errors: string[]; warnings: string[];
   results: { concurrency: number; tasks_per_h: { p10: number; p50: number; p90: number }; task_p90_min: number; task_med_min: number;
-    engines: Record<string, { util: number; wait_p90: number; calls: number; cost_usd?: number; skipped: number; reread_tokens: number; prefill_tokens: number }>;
+    engines: Record<string, { util: number; wait_p90: number; calls: number; cost_usd?: number; skipped: number; reread_tokens: number; prefill_tokens: number;
+      tps: number; tps_in: number; tps_out: number; watts: number }>;
+    machine: { tps: number; tps_in: number; tps_out: number; watts: number; tps_per_w: number; out_tps_per_w: number; utilisation: number; cpu_busy: number };
+    attempts_per_task: number;
     kinds: Record<string, { calls: number; per_min: number; prompt_p50: number; prompt_p90: number; wait_p90: number; dur_p90: number }>;
     gpus: Record<string, number>; bottlenecks: string[] }[];
 };
@@ -44,8 +47,9 @@ export default function RolesPage() {
   return (
     <div>
       <h1>Roles &amp; simulate</h1>
-      <p className="mt-1 text-muted">Assign engines to the roles of the agent system, describe the load, and run. The run plays a Turnstone-shaped
-        workload through the engines: fork-join delegation, approvals, guards and compaction.</p>
+      <p className="mt-1 text-muted">Assign engines to the roles of the agent system, describe the load, and run. The run plays an agent-harness workload
+        through the engines: a maker that calls tools and delegates to sub-agents (fork-join), approvals through a judge, a guard on tool
+        results, and context compaction. The shape is adjustable below; the defaults follow one harness, Turnstone, but nothing here needs it.</p>
 
       <section className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {ROLES.map((r) => (
@@ -80,6 +84,12 @@ export default function RolesPage() {
           <Field label="maker system prompt tokens"><input type="number" value={s.workload.maker_sys} onChange={(e) => s.setWorkload({ ...s.workload, maker_sys: Number(e.target.value) })} /></Field>
           <Field label="sub-agent system prompt tokens"><input type="number" value={s.workload.sub_sys} onChange={(e) => s.setWorkload({ ...s.workload, sub_sys: Number(e.target.value) })} /></Field>
           <Field label="tasks per workstream"><input type="number" value={s.workload.tasks_per_ws} min={1} max={10} onChange={(e) => s.setWorkload({ ...s.workload, tasks_per_ws: Number(e.target.value) })} /></Field>
+          <Field label="work per task ×" hint="scales turns and tool calls per task; a stronger model needs fewer">
+            <input type="number" step={0.25} min={0.25} max={4} value={s.workload.work_scale} aria-label="work per task"
+                   onChange={(e) => s.setWorkload({ ...s.workload, work_scale: Number(e.target.value) })} /></Field>
+          <Field label="attempts per task" hint="1 = every task succeeds first time; 1.5 = every other task is redone">
+            <input type="number" step={0.1} min={1} max={4} value={s.workload.reruns} aria-label="attempts per task"
+                   onChange={(e) => s.setWorkload({ ...s.workload, reruns: Number(e.target.value) })} /></Field>
           <label className="flex items-center gap-2 text-sm text-ink self-end">
             <input type="checkbox" checked={s.workload.replay_thinking} onChange={(e) => s.setWorkload({ ...s.workload, replay_thinking: e.target.checked })} />
             the orchestrator sends the model's thinking back (history reuse works)
@@ -106,7 +116,31 @@ export default function RolesPage() {
           <Notices errors={res.errors} warnings={res.warnings} />
           {res.results.length > 0 && (
             <>
-              <h2 className="mt-4">Tasks per hour</h2>
+              <h2 className="mt-4">Throughput, power, utilisation</h2>
+              <p className="mt-1 text-sm text-muted">The machine-level numbers. Tokens per second is what the hardware delivers regardless of which model turns
+                them into finished work; tasks per hour (further down) depends on the models and the levers above.</p>
+              <table className="mt-3 w-full text-sm">
+                <thead className="text-left text-muted"><tr><th className="py-1 font-normal">workstreams</th><th className="font-normal text-right pr-4">tok/s total</th>
+                  <th className="font-normal text-right pr-4">reads / writes</th><th className="font-normal text-right pr-4">watts</th><th className="font-normal text-right pr-4">tok/s per W</th>
+                  <th className="font-normal text-right pr-4">written tok/s per W</th><th className="font-normal text-right">machine utilisation</th></tr></thead>
+                <tbody>
+                  {res.results.map((r) => (
+                    <tr key={r.concurrency} className="border-t border-line/60">
+                      <td className="py-1">{r.concurrency}</td>
+                      <td className="text-right pr-4 font-medium">{r.machine.tps.toFixed(0)}</td>
+                      <td className="text-right pr-4">{r.machine.tps_in.toFixed(0)} / {r.machine.tps_out.toFixed(0)}</td>
+                      <td className="text-right pr-4">{r.machine.watts.toFixed(0)} W</td>
+                      <td className="text-right pr-4">{r.machine.tps_per_w.toFixed(2)}</td>
+                      <td className="text-right pr-4">{r.machine.out_tps_per_w.toFixed(3)}</td>
+                      <td className="text-right">{(r.machine.utilisation * 100).toFixed(0)} %</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="mt-1 text-xs text-muted">Watts = GPUs between idle and their power cap by busy share, CPU by busy cores, plus 40 W for the rest.
+                Utilisation = busy share of every GPU and of the CPU pool, averaged over the parts; a parked card counts as idle capacity.</p>
+
+              <h2 className="mt-8">Tasks per hour <span className="text-sm font-normal text-muted">({res.results[0].attempts_per_task.toFixed(2)} attempts per task, work × {s.workload.work_scale})</span></h2>
               <div className="mt-2 grid gap-2">
                 {res.results.map((r) => {
                   const max = Math.max(...res.results.map((x) => x.tasks_per_h.p90));
@@ -141,6 +175,8 @@ export default function RolesPage() {
                         {Object.entries(r.engines).map(([id, e]) => (
                           <Bar key={id} value={e.util} max={1} danger={e.util > 0.85}
                                label={`${names[id] ?? id}: busy ${(e.util * 100).toFixed(0)} %, waits ${e.wait_p90.toFixed(0)} s p90`
+                                 + (e.tps > 0 ? `, ${e.tps.toFixed(0)} tok/s (${e.tps_in.toFixed(0)} read / ${e.tps_out.toFixed(0)} written)` : "")
+                                 + (e.watts > 0 ? `, ${e.watts.toFixed(0)} W` : "")
                                  + (e.prefill_tokens > 0 ? `, re-reads ${(100 * e.reread_tokens / e.prefill_tokens).toFixed(0)} %` : "")
                                  + (e.cost_usd ? `, $${e.cost_usd.toFixed(2)}` : "")} />
                         ))}

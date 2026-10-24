@@ -27,7 +27,8 @@ const pick = async (locator, value) => { await locator.selectOption(value); awai
 await page.goto(BASE + "#machine");
 await page.waitForSelector("text=Operating system", { timeout: 120000 });
 ok(await page.getByText("CPU 2", { exact: true }).count() === 1, "first load: both CPU panels shown");
-ok((await page.getByText(/48 of 48 PCIe lanes/).count()) === 1, "first load: the example box uses 48 of 48 lanes");
+await page.waitForSelector("text=/48 of 48 PCIe lanes/", { timeout: 60000 });
+ok(true, "first load: the example box uses 48 of 48 lanes");
 
 // 2. CPU switch on a normal machine
 await pick(cpuSelect(), "ryzen9-9950x");
@@ -69,6 +70,13 @@ ok((await page.getByText(/external · 3 GB\/s per direction/).count()) === 1, "a
 await page.getByRole("button", { name: "Remove gpu-2" }).click(); await page.waitForTimeout(1200);
 ok((await stored()).machine.devices.filter((d) => d.kind === "gpu").length === gpusBefore, "Remove GPU");
 
+// 4b. power cap
+await page.evaluate(() => localStorage.clear()); await page.reload();
+await page.waitForSelector("text=/48 of 48 PCIe lanes/", { timeout: 120000 });
+await page.getByLabel("power cap gpu-1").fill("225"); await page.waitForTimeout(1500);
+ok((await stored()).machine.devices.find((d) => d.id === "gpu-1").power_w === 225, "power cap stored");
+ok((await page.getByText(/slower prompts/).count()) >= 1, "power cap shows its effect");
+
 // 5. back to the example and through every page
 await page.evaluate(() => localStorage.clear()); await page.reload();
 await page.waitForSelector("text=Operating system", { timeout: 120000 });
@@ -80,6 +88,15 @@ await page.getByLabel(/Scenarios/).fill("3");
 await page.getByRole("button", { name: "Simulate" }).click();
 await page.waitForSelector("text=Tasks per hour", { timeout: 180000 });
 ok((await page.getByText(/typical ·/).count()) >= 1, "simulation returns results");
+ok((await page.getByText(/Throughput, power, utilisation/).count()) === 1, "headline metrics shown");
+ok((await page.getByText(/tok\/s per W/).count()) >= 1, "tokens per watt shown");
+const tpsBefore = await page.locator("tbody tr").first().locator("td").nth(1).innerText();
+await page.getByText(/Workload: what the agents do/).click(); await page.waitForTimeout(300);
+await page.getByLabel("attempts per task").fill("2"); await page.waitForTimeout(300);
+await page.getByRole("button", { name: "Simulate" }).click();
+await page.waitForSelector("text=2.00 attempts per task", { timeout: 180000 });
+const tpsAfter = await page.locator("tbody tr").first().locator("td").nth(1).innerText();
+ok(Math.abs(Number(tpsAfter) - Number(tpsBefore)) / Number(tpsBefore) < 0.35, `tok/s stays put under the reruns lever (${tpsBefore} -> ${tpsAfter})`);
 await go("live");
 await page.locator("select").first().selectOption("1000");
 await page.getByRole("button", { name: "Run and watch" }).click();

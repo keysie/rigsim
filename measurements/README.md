@@ -15,7 +15,7 @@ config you ran with.
 `method.submitter` an alias and free text without names, addresses or links; the validator warns on those.
 
 **What happens with it:** the build copies all records into the site. The browser build aggregates them into
-clusters keyed by GPUs, engine, model, quant and streams; on any engine card whose configuration matches a
+clusters keyed by GPUs, their power caps, engine, model, quant and streams; on any engine card whose configuration matches a
 cluster, the app offers the cluster's median as a one-click measured value, with the count and spread. The
 Calibration page lists the clusters with the model's error per cluster. Records never change the model's
 constants by themselves; promoting a cluster into the calibration set is a deliberate maintainer step.

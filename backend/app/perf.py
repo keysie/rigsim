@@ -14,12 +14,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from .catalog.gpus import compute_efficiency, kernel_efficiency, layer_overhead_factor
+from .catalog.gpus import compute_efficiency, kernel_efficiency, layer_overhead_factor, power_factors
 from .catalog.models import ENGINES, MODEL_BY_ID, QUANTS
 
 GPU_BW_EFF = 0.75          # share of spec bandwidth a decode kernel achieves (27B AWQ on a 3090: 39 tok/s; 8B Q4_0: 167)
 GPU_FLOPS_EFF = 0.50       # share of FP16 tensor peak a prefill achieves (dense models; llama.cpp pp512 8B: ~0.68 on 3090/4090)
-STRATA_FLOPS_EFF = 0.36    # same for Strata's MoE prompt path (calibrated on the box and the 4090 / 5090 reports)
+STRATA_FLOPS_EFF = 0.41    # Strata's MoE prompt path (box at a 250 W cap, 4090 / 5090 reports uncapped)
 HIT_SKEW = 4.0             # routing is skewed: hit = 1 - (1 - held)^HIT_SKEW
 CPU_EXPERT_GBS_PER_CORE = 3.0   # fallback when a CPU has no ISA data
 CPU_EXPERT_RAM_SHARE = 0.60     # expert compute uses at most this share of the memory pool bandwidth
@@ -48,6 +48,8 @@ class EnginePerf:
     cache_convs: int = 1
     window: int = 32768
     memory: dict = field(default_factory=dict)
+    watts_busy: float = 0.0        # W drawn by this engine's GPUs (at their caps) and CPU share while it works
+    watts_idle: float = 0.0        # W those parts draw when this engine is idle
     notes: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
     limits: dict = field(default_factory=dict)   # resource -> share of a window's time
@@ -124,10 +126,26 @@ def derive(spec, machine_info) -> EnginePerf:
             r = _vllm(p, args, model, gpus, cpu, machine_info)
         else:
             r = _llama(p, args, model, gpus, cpu, machine_info)
-        return _apply_benchmarks(r, spec)
+        r = _apply_benchmarks(r, spec)
+        _watts(r, gpus, cpu, machine_info)
+        return r
     except ValueError as e:
         p.errors.append(str(e))
         return p
+
+
+def _watts(p: EnginePerf, gpus, cpu, info) -> None:
+    """Power while this engine works: its GPUs at their caps (SoCs: their TDP share), plus the CPU's
+    TDP scaled by the cores it uses; idle: the same parts at idle draw."""
+    busy = idle = 0.0
+    for g in gpus:
+        cap = g.get("power_w") or g["spec"]["tdp_w"]
+        busy += cap
+        idle += g.get("idle_w", 0.07 * g["spec"]["tdp_w"])
+    cores = int(p.resources.get("cores", 0) or 0)
+    busy += cpu.get("tdp_w", 0) * min(1.0, cores / max(1, cpu["cores"])) * 0.8
+    p.watts_busy = round(busy, 1)
+    p.watts_idle = round(idle, 1)
 
 
 def _apply_benchmarks(p: EnginePerf, spec) -> EnginePerf:
@@ -355,11 +373,11 @@ def _flops_eff(model):
 
 
 def _gpu_bw(g, bpw: float = 4.5):
-    return g["spec"]["mem_bw_gbs"] * GPU_BW_EFF * kernel_efficiency(g["spec"], bpw)
+    return g["spec"]["mem_bw_gbs"] * GPU_BW_EFF * kernel_efficiency(g["spec"], bpw) * g.get("power_bw_factor", 1.0) * power_factors(g["spec"], g.get("power_w"))[0]
 
 
 def _gpu_flops(g):
-    return g["spec"]["fp16_tflops"] * 1e12 * compute_efficiency(g["spec"])
+    return g["spec"]["fp16_tflops"] * 1e12 * compute_efficiency(g["spec"]) * g.get("power_compute_factor", 1.0) * power_factors(g["spec"], g.get("power_w"))[1]
 
 
 def _layer_ms(gpus):
@@ -393,7 +411,7 @@ def _vllm(p, args, model, gpus, cpu, info):
     conc = min(int(args["max_num_seqs"]), conc_by_kv)
     nvl = _nvlinked(gpus, info)
     bw = sum(_gpu_bw(g, bpw) for g in gpus) * (1.0 if tp == 1 else (0.92 if nvl else 0.78))
-    flops = sum(_gpu_flops(g) for g in gpus) * _flops_eff(model) * (0.7 if bpw < 8 else 1.0)   # dequant costs prefill
+    flops = sum(_gpu_flops(g) for g in gpus) * _flops_eff(model) * (0.8 if bpw < 8 else 1.0)   # dequant costs prefill (box at 250 W: 27B AWQ 1,050 tok/s)
     active_gb = model["active_b"] * bpw / 8 if model["experts"] else weights_gb
     expert_gb = max(0.0, model["active_b"] - model["params_b"] * (1 - model["expert_share"])) * bpw / 8
     spec_mult = 1.5 if args.get("speculative") and model["mtp"] else 1.0

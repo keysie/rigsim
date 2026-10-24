@@ -42,6 +42,8 @@ class PcieDevice:
     link_gen: int = 4
     link_width: int = 16
     link_type: str = "pcie"              # pcie | tb3 | tb4 | usb4 | usb4v2 | tb5
+    power_w: float | None = None         # GPU power cap in W; None = the card's default limit
+    power_w: int | None = None           # GPU power cap in watts (None = the card's default limit)
     capacity_tb: float | None = None
 
 
@@ -126,6 +128,10 @@ class Workload:
     visible_frac: float = 0.1
     replay_thinking: bool = False
     tasks_per_ws: int = 3
+    work_scale: float = 1.0          # lever: how much work one task is, relative to the ranges (turns, tool calls, outputs)
+    reruns: float = 1.0              # lever: how often a task is run before it counts (1 = once; 1.5 = half the tasks twice)
+    work_scale: float = 1.0        # multiplies turns per task: how much agent work one task takes (model-dependent)
+    reruns_per_task: float = 1.0   # how often a task is redone before it counts (1 = never)
 
     @classmethod
     def model_validate(cls, data: Any) -> "Workload":

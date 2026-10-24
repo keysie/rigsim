@@ -18,7 +18,8 @@
     "model_id": "rtx-3090",
     "cpu": 0,
     "link_gen": 3,
-    "link_width": 16
+    "link_width": 16,
+    "power_w": 250
    },
    {
     "id": "gpu-2",
@@ -26,7 +27,8 @@
     "model_id": "rtx-3090",
     "cpu": 0,
     "link_gen": 3,
-    "link_width": 16
+    "link_width": 16,
+    "power_w": 250
    },
    {
     "id": "gpu-3",
@@ -34,7 +36,8 @@
     "model_id": "rtx-3090",
     "cpu": 0,
     "link_gen": 3,
-    "link_width": 8
+    "link_width": 8,
+    "power_w": 250
    },
    {
     "id": "gpu-4",
@@ -67,7 +70,7 @@
   "tool": "bench/benchw.py tasks (pass 1)",
   "engine_build": "0.1.43.1 hardened",
   "runs": 3,
-  "streams": 4,
+  "streams": 1,
   "context": 4096,
   "power_limit_w": 250,
   "driver": "615.71.09",
@@ -75,7 +78,7 @@
   "submitter": "keysie"
  },
  "results": {
-  "decode_4": 175,
+  "decode_1": 132,
   "prefill": 3300,
   "hit": 0.99
  }
