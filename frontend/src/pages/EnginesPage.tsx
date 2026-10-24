@@ -50,7 +50,23 @@ export default function EnginesPage() {
     setEngines([...engines, { id: `engine-${n}`, name: `Engine ${n}`, engine: "llama.cpp", version: "b11552",
       model_id: "qwen3.8-27b", args: {}, gpus: [], cpu: activeCpus[0]?.i ?? 0, cpu_cores: 4, storage: ssds[0]?.id ?? null }]);
   };
-  const remove = (id: string) => setEngines(engines.filter((e) => e.id !== id));
+  const roles = useStore((s) => s.roles);
+  const ROLE_NAMES: Record<string, string> = { coordinator: "coordinator", maker: "maker", sub: "sub-makers", guard: "guard", judge: "judge", reranker: "reranker" };
+  const rolesUsing = (id: string) => Object.entries(roles).filter(([, v]) => v === id).map(([k]) => ROLE_NAMES[k] ?? k);
+  const [removed, setRemoved] = useState<{ engine: EngineSpec; index: number } | null>(null);
+  const remove = (id: string) => {
+    const index = engines.findIndex((e) => e.id === id);
+    if (index < 0) return;
+    setRemoved({ engine: engines[index], index });
+    setEngines(engines.filter((e) => e.id !== id));
+  };
+  const undo = () => {
+    if (!removed) return;
+    const list = engines.slice();
+    list.splice(Math.min(removed.index, list.length), 0, removed.engine);
+    setEngines(list);
+    setRemoved(null);
+  };
 
   return (
     <div>
@@ -58,6 +74,12 @@ export default function EnginesPage() {
         <h1>Engines</h1>
         <button className="btn btn-primary" onClick={add}>Add engine</button>
       </div>
+      {removed && (
+        <div className="mt-4 flex items-center justify-between rounded border border-line bg-panel px-3 py-2 text-sm" role="status">
+          <span>Removed “{removed.engine.name || removed.engine.id}”.{rolesUsing(removed.engine.id).length ? ` It was assigned to: ${rolesUsing(removed.engine.id).join(", ")} — those roles are now empty.` : ""}</span>
+          <button className="btn" onClick={undo}>Undo</button>
+        </div>
+      )}
       <p className="mt-1 text-muted">One model per engine. The version decides which arguments exist; the hardware you assign decides the speeds shown on the right.</p>
       <div className="mt-6 flex flex-col gap-4">
         {engines.map((e) => {
@@ -88,7 +110,7 @@ export default function EnginesPage() {
                       <Select value={e.model_id} options={models.map((m) => ({ value: m.id, label: m.name }))}
                               onChange={(m) => patch(e.id, (x) => { x.model_id = m; })} />
                     </Field>
-                    <button className="btn btn-quiet ml-auto" onClick={() => remove(e.id)}>Remove</button>
+                    <button className="btn ml-auto border-red/40 text-red" onClick={() => remove(e.id)}>Remove engine</button>
                   </div>
 
                   {!hosted && (

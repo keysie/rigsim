@@ -94,10 +94,16 @@ let seq = 0;
 const pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
 export const runsInBrowser = !API_BASE;
 
+export let bootPhase = "starting";
+const bootListeners = new Set<(s: string) => void>();
+export function onBootPhase(fn: (s: string) => void) { bootListeners.add(fn); return () => { bootListeners.delete(fn); }; }
+function setBoot(s: string) { bootPhase = s; bootListeners.forEach((f) => f(s)); }
+
 function getWorker(): Worker {
   if (!worker) {
     worker = new Worker(new URL("./py.worker.ts", import.meta.url), { type: "module" });
-    worker.onmessage = (e: MessageEvent<{ id: number; result?: unknown; error?: string }>) => {
+    worker.onmessage = (e: MessageEvent<{ id: number; result?: unknown; error?: string; boot?: string }>) => {
+      if (e.data.boot) { setBoot(e.data.boot); return; }
       const p = pending.get(e.data.id);
       if (!p) return;
       pending.delete(e.data.id);

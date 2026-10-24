@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { api, exportConfig, parseConfig, runsInBrowser, useStore, type Catalog } from "./store";
+import { api, exportConfig, onBootPhase, parseConfig, runsInBrowser, useStore, type Catalog } from "./store";
 import MachinePage from "./pages/MachinePage";
 import EnginesPage from "./pages/EnginesPage";
 import RolesPage from "./pages/RolesPage";
@@ -9,7 +9,7 @@ import MeasurePage from "./pages/MeasurePage";
 
 const PAGES = [
   { id: "machine", title: "Machine", blurb: "CPUs, memory, PCIe links, SSDs and GPUs" },
-  { id: "engines", title: "Engines", blurb: "which engine serves which model on what" },
+  { id: "engines", title: "Engines", blurb: "the programs that run the models; add and remove them here" },
   { id: "roles", title: "Roles & simulate", blurb: "the agent system, its load, and where it stalls" },
   { id: "live", title: "Live run", blurb: "watch one run: log and load per part" },
   { id: "calibration", title: "Calibration data", blurb: "measured points, sources, and claims checked" },
@@ -24,6 +24,8 @@ export default function App() {
   const reset = useStore((s) => s.reset);
   const loadConfig = useStore((s) => s.loadConfig);
   const [error, setError] = useState<string | null>(null);
+  const [boot, setBoot] = useState("starting");
+  useEffect(() => onBootPhase(setBoot), []);
   const [notice, setNotice] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -90,7 +92,7 @@ export default function App() {
             <span>{notice}</span><button className="underline" onClick={() => setNotice(null)}>dismiss</button>
           </div>
         )}
-        {!catalog ? <p className="text-muted">{runsInBrowser ? "Starting the simulator in your browser (about 10 s the first time; nothing is sent anywhere)…" : "Loading the parts catalog…"}</p> : (
+        {!catalog ? <p className="text-muted">{runsInBrowser ? `Starting the simulator in your browser — ${boot}. Nothing is sent anywhere.` : "Loading the parts catalog…"}</p> : (
           page === "machine" ? <MachinePage /> : page === "engines" ? <EnginesPage /> : page === "live" ? <LivePage /> : page === "calibration" ? <CalibrationPage /> : page === "measure" ? <MeasurePage /> : <RolesPage />
         )}
       </main>
