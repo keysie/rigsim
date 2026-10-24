@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api, useStore } from "../store";
+import { api, cancelAll, CancelledError, useStore } from "../store";
 import { Bar, Field, NumInput, Notices, Select } from "../components/ui";
 
 type Ev = { t: number; ev: "submit" | "admit" | "done"; engine: string; kind: string; conv: string; context?: number;
@@ -33,7 +33,7 @@ export default function LivePage() {
         concurrency: s.concurrency, scenarios: s.scenarios, seed: 1 }, concurrency: conc, scenario });
       setTrace(t);
       if (!t.errors.length) setPlaying(true);
-    } catch (e) { setErr(String(e)); } finally { setBusy(false); }
+    } catch (e) { setErr(e instanceof CancelledError ? "Cancelled." : String(e)); } finally { setBusy(false); }
   };
 
   useEffect(() => {
@@ -108,6 +108,7 @@ export default function LivePage() {
           <Select value={speed} options={SPEEDS.map((x) => ({ value: x, label: `${x}×` }))} onChange={setSpeed} />
         </Field>
         <button className="btn btn-primary" onClick={run} disabled={busy || !s.roles.maker}>{busy ? "Simulating…" : "Run and watch"}</button>
+        {busy && <button className="btn" onClick={cancelAll}>Cancel</button>}
         {trace && !trace.errors.length && (
           <>
             <button className="btn" onClick={() => { if (!playing && clock >= trace.makespan_s) { setClock(0); setPlaying(true); } else setPlaying((p) => !p); }}>{playing ? "Pause" : clock >= trace.makespan_s ? "Replay" : "Resume"}</button>

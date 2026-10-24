@@ -51,7 +51,7 @@ no server, no accounts, nothing is sent anywhere. Configurations can be saved an
    utilisation** figure (busy share averaged over every GPU and the CPU pool). Tasks per hour is shown
    below them, because it depends entirely on the models and the levers; then utilisation per engine
    and GPU with each engine's tok/s and watts, hosted cost, call rates, and a ranked list of what limits
-   throughput.
+   throughput. A **Cancel** button stops a long run (the in-browser simulator restarts on the next call).
 4. **Live run** — one scenario replayed at 10–1000×: a log of every request and gauges per engine, GPU, PCIe
    link, CPU cores and memory bandwidth.
 5. **Calibration data** — every measured point the model was fitted to or checked against, with sources, and

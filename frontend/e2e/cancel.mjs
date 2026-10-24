@@ -1,0 +1,24 @@
+// A long run can be cancelled, and the simulator comes back afterwards.
+import { chromium } from "playwright-core";
+const BASE = process.argv[2] ?? "http://127.0.0.1:8090/";
+const browser = await chromium.launch({ executablePath: process.env.CHROMIUM, args: ["--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage", "--headless=new"] });
+const page = await (await browser.newContext({ viewport: { width: 1280, height: 900 } })).newPage();
+const errors = []; page.on("pageerror", (e) => errors.push(e.message));
+let step = 0; const ok = (c, w) => { step++; console.log(`${c ? "ok  " : "FAIL"} ${step} ${w}`); if (!c) { console.log(errors); process.exit(1); } };
+await page.goto(BASE + "#roles"); await page.waitForSelector("text=Concurrent workstreams", { timeout: 120000 }); await page.waitForTimeout(1500);
+await page.getByLabel(/Scenarios/).fill("60"); await page.getByLabel(/Concurrent workstreams/).fill("1, 2, 4, 8, 16, 32");
+const t0 = Date.now();
+await page.getByRole("button", { name: "Simulate" }).click();
+await page.waitForSelector("button:has-text('Cancel')", { timeout: 5000 });
+ok(true, "a Cancel button appears while a run is in progress");
+await page.waitForTimeout(1500);
+await page.getByRole("button", { name: "Cancel" }).click();
+await page.waitForSelector("text=Cancelled.", { timeout: 5000 });
+ok(Date.now() - t0 < 12000, `the run stops within seconds (${((Date.now() - t0) / 1000).toFixed(1)} s)`);
+ok(!(await page.getByRole("button", { name: "Simulate" }).isDisabled()), "Simulate is available again");
+await page.getByLabel(/Scenarios/).fill("2"); await page.getByLabel(/Concurrent workstreams/).fill("1");
+await page.getByRole("button", { name: "Simulate" }).click();
+await page.waitForSelector("text=Tasks per hour", { timeout: 120000 });
+ok(true, "a new run after cancelling works (the simulator restarted)");
+ok(errors.length === 0, "no uncaught page errors");
+await browser.close(); console.log(`all ${step} cancel checks passed`);
