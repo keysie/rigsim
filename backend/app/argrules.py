@@ -37,6 +37,11 @@ def evaluate(engine: str, version: str, args: dict, n_gpus: int, gpu_specs: list
     a = args
     model = model or {}
     if engine == "strata":
+        packs = model.get("quants")
+        if packs and str(a.get("quantization", "")) not in packs:
+            _state(s, "quantization", force=packs[0], reason=f"this model comes as {', '.join(packs)}")
+        if model.get("ssd_stream") and str(a.get("quantization")) == "ud_q4_k_xl":
+            _state(s, "multi_gpu", disabled=True, force="layer-split", reason="UD-Q4_K_XL runs on one NVIDIA GPU")
         multi = n_gpus >= 2
         mode = str(a.get("multi_gpu", "layer-split"))
         if not multi:

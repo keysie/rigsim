@@ -51,6 +51,9 @@ export default function EnginesPage() {
     if (tp?.options && x.gpus.length >= 1 && tp.options.includes(String(x.gpus.length)) && String(x.args.tensor_parallel ?? tp.default) !== String(x.gpus.length)) {
       x.args = { ...x.args, tensor_parallel: String(x.gpus.length) };
     }
+    // a model that comes in specific packs: the pack field is limited to them and lands on the first one
+    const packs = catalog.models.find((m) => m.id === x.model_id)?.quants;
+    if (packs?.length && !packs.includes(String(x.args.quantization ?? ""))) x.args = { ...x.args, quantization: packs[0] };
     setEngines(next);
   };
   const add = () => {
@@ -117,7 +120,7 @@ export default function EnginesPage() {
                       <Select value={e.version} options={versions.map((v) => ({ value: v, label: v }))}
                               onChange={(v) => patch(e.id, (x) => { x.version = v; x.args = {}; })} />
                     </Field>
-                    <Field label="Model">
+                    <Field label="Model" hint={catalog.models.find((m) => m.id === e.model_id)?.note}>
                       <Select value={e.model_id} options={models.map((m) => ({ value: m.id, label: m.name }))}
                               onChange={(m) => patch(e.id, (x) => { x.model_id = m; })} />
                     </Field>
@@ -161,7 +164,7 @@ export default function EnginesPage() {
                   )}
 
                   <div className="mt-4 grid gap-x-4 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
-                    {args.map((a) => <ArgField key={a.name} a={a} value={e.args[a.name]} state={d?.arg_states?.[a.name]}
+                    {args.map((a) => <ArgField key={a.name} a={packArg(a, catalog.models.find((m) => m.id === e.model_id)?.quants)} value={e.args[a.name]} state={d?.arg_states?.[a.name]}
                                                onChange={(v) => patch(e.id, (x) => { x.args = { ...x.args, [a.name]: v }; })} />)}
                   </div>
                   {e.engine === "strata" && d?.layout && (
@@ -238,6 +241,13 @@ export default function EnginesPage() {
       </div>
     </div>
   );
+}
+
+/** The pack (quantization) field offers only the packs the chosen model comes in. */
+function packArg(a: ArgDef, packs?: string[]): ArgDef {
+  if (a.name !== "quantization" || !packs?.length || !a.options) return a;
+  const options = a.options.filter((o) => packs.includes(o));
+  return { ...a, options: options.length ? options : a.options, default: packs[0], help: packs.length === 1 ? "the only pack this model comes in" : a.help };
 }
 
 type ArgState = { disabled: boolean; force: unknown; reason: string };

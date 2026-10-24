@@ -6,7 +6,28 @@ sparse attention) have small KV and a fixed recurrent state instead."""
 MODELS = [
     dict(id="qwen3.8-flash-next", name="Qwen3.8-Flash-Next (125B, A10B)", family="qwen", params_b=125, active_b=10,
          layers=48, experts=512, active_experts=10, shared_experts=1, expert_share=0.93, kv_kb_per_token=34,
-         recurrent_state_mb=118, mtp=True, vision=True, max_context=262144, year=2026, attn_layers=12),
+         recurrent_state_mb=118, mtp=True, vision=True, max_context=262144, year=2026, attn_layers=12,
+         quants=["iq3_s", "iq3_xxs", "iq2_xs", "q2_0"], note="the original, four sizes; images"),
+    # the other Flash-Next packs Strata serves (docs/MODELS.md): same architecture, different expert packs
+    dict(id="qwen3.8-flash-next-swift", name="Swift 1.5 (Flash-Next fine-tune: thinks shorter)", family="qwen", params_b=125, active_b=10,
+         layers=48, experts=512, active_experts=10, shared_experts=1, expert_share=0.93, kv_kb_per_token=34,
+         recurrent_state_mb=118, mtp=True, vision=True, max_context=262144, year=2026, attn_layers=12,
+         quants=["iq3_s", "iq3_xxs", "iq2_xs", "q2_0"], note="same speed and RAM as the original; shorter thinking (set the answer-token range lower on the roles page)"),
+    dict(id="qwen3.8-flash-next-coder", name="Flash-Next Coder (ISTA-DASLab: 256 of 512 experts kept)", family="qwen", params_b=67, active_b=10,
+         layers=48, experts=256, active_experts=10, shared_experts=1, expert_share=0.87, kv_kb_per_token=34,
+         recurrent_state_mb=118, mtp=True, vision=True, max_context=262144, year=2026, attn_layers=12,
+         quants=["iq1_m"], quant_bpw={"iq1_m": 3.5}, speed_factor=0.55,
+         note="one size (IQ1_M, experts stored like IQ3_S): 29.6 GB; fits 32 GB of RAM; code only, weak outside code and non-CJK languages. "
+              "Writes no faster per token than IQ3_S despite the smaller pack (Strata's own table), so its decode is scaled accordingly"),
+    dict(id="qwen3.8-flash-next-unsloth", name="Flash-Next Unsloth UD (IQ4_XS / Q4_K_XL / Q6_K_XL)", family="qwen", params_b=125, active_b=10,
+         layers=48, experts=512, active_experts=10, shared_experts=1, expert_share=0.93, kv_kb_per_token=34,
+         recurrent_state_mb=118, mtp=True, vision=True, max_context=262144, year=2026, attn_layers=12,
+         quants=["ud_iq4_xs", "ud_q4_k_xl", "ud_q6_k_xl"], quant_bpw={"ud_iq4_xs": 4.1, "ud_q4_k_xl": 5.3, "ud_q6_k_xl": 6.6},
+         ssd_stream=True, note="experts beyond RAM minus 24 GB are read from the SSD while answering (an NVMe helps); UD-Q4_K_XL: one NVIDIA GPU, no images; needs 48 GB RAM or more"),
+    dict(id="qwen3.8-flash-next-orca", name="Flash-Next Uncensored IQ3_XXS (OrcaRouter)", family="qwen", params_b=125, active_b=10,
+         layers=48, experts=512, active_experts=10, shared_experts=1, expert_share=0.93, kv_kb_per_token=34,
+         recurrent_state_mb=118, mtp=True, vision=True, max_context=262144, year=2026, attn_layers=12,
+         quants=["iq3_xxs"], note="manual packing conversion, not an installer option; same speed as IQ3_XXS"),
     dict(id="qwen3.8-27b", name="Qwen3.8-27B", family="qwen", params_b=27, active_b=27, layers=64, experts=0,
          active_experts=0, shared_experts=0, expert_share=0.0, kv_kb_per_token=110, recurrent_state_mb=0,
          mtp=True, vision=True, max_context=262144, year=2026),
@@ -64,15 +85,17 @@ MODEL_BY_ID = {m["id"]: m for m in MODELS}
 # bits per weight including scales/zeros overhead
 QUANTS = {
     "fp16": 16.0, "fp8": 8.5, "q8_0": 8.5, "q6_k": 6.6, "q5_k_m": 5.7, "awq4": 4.6, "q4_k_m": 4.8, "iq4_xs": 4.3, "q4_0": 4.5, "mxfp4": 4.3,
-    "iq3_s": 3.5, "iq3_xxs": 3.1, "q2_k": 2.9, "q2_0": 2.6, "iq2_xs": 2.4, "iq1_m": 1.9,
+    "iq3_s": 3.5, "iq3_xxs": 3.1, "q2_k": 2.9, "q2_0": 2.6, "iq2_xs": 2.4, "iq1_m": 1.9, "ud_iq4_xs": 4.1, "ud_q4_k_xl": 5.3, "ud_q6_k_xl": 6.6,
 }
 
 ENGINES = {
     "strata": dict(
-        name="Strata", kind="local", models=["qwen3.8-flash-next"],
+        name="Strata", kind="local", models=["qwen3.8-flash-next", "qwen3.8-flash-next-swift", "qwen3.8-flash-next-coder",
+                                              "qwen3.8-flash-next-unsloth", "qwen3.8-flash-next-orca"],
         versions={
             "0.1.43.1": dict(args=[
-                dict(name="quantization", type="choice", default="iq3_s", options=["iq3_s", "iq3_xxs", "iq2_xs", "q2_0", "iq4_xs"], help="expert pack"),
+                dict(name="quantization", type="choice", default="iq3_s", options=["iq3_s", "iq3_xxs", "iq2_xs", "q2_0", "iq1_m", "ud_iq4_xs", "ud_q4_k_xl", "ud_q6_k_xl"],
+                     help="expert pack; the model decides which packs exist"),
                 dict(name="multi_gpu", type="choice", default="layer-split", options=["layer-split", "peer-device"],
                      help="two or more cards: --layer-split (stages) or --peer-device (the first card runs the model, the others cache experts); one or the other"),
                 dict(name="expert_cache_mib", type="int", default=0, min=0, max=200000, help="--expert-cache per card in MiB (0 = auto: what is left after weights and KV)"),
@@ -94,7 +117,8 @@ ENGINES = {
                      help="share of expert misses copied over PCIe instead of computed on the CPU"),
             ]),
             "0.2.2": dict(args=[
-                dict(name="quantization", type="choice", default="iq3_s", options=["iq3_s", "iq3_xxs", "iq2_xs", "q2_0", "iq4_xs"], help="expert pack"),
+                dict(name="quantization", type="choice", default="iq3_s", options=["iq3_s", "iq3_xxs", "iq2_xs", "q2_0", "iq1_m", "ud_iq4_xs", "ud_q4_k_xl", "ud_q6_k_xl"],
+                     help="expert pack; the model decides which packs exist"),
                 dict(name="multi_gpu", type="choice", default="layer-split", options=["layer-split", "peer-device"],
                      help="two or more cards: --layer-split (stages) or --peer-device (the first card runs the model, the others cache experts); one or the other"),
                 dict(name="expert_cache_mib", type="int", default=0, min=0, max=200000, help="--expert-cache per card in MiB (0 = auto: what is left after weights and KV)"),
