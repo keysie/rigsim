@@ -29,7 +29,8 @@ no server, no accounts, nothing is sent anywhere. Configurations can be saved an
    own generation and width — or an external Thunderbolt 3/4/5 or USB4 link for eGPU enclosures, which caps
    bandwidth and costs 4 CPU lanes only when the CPU has no integrated port (pre-2022, non-SoC: a
    controller card); NVLink bridges between adjacent identical GPUs; an operating-system
-   switch. A **prebuilt systems** dropdown fills the page with a DGX Spark, Mac Studio M4 Max / M3 Ultra,
+   switch; a **power cap** per GPU within the card's settable range (decode barely moves, prompt
+   processing follows the clock). A **prebuilt systems** dropdown fills the page with a DGX Spark, Mac Studio M4 Max / M3 Ultra,
    Mac Pro M2 Ultra, Framework Desktop (Strix Halo) or a typical desktop; everything stays editable, so a
    Spark with an eGPU on its TB4 port is two clicks. Unified-memory machines model the iGPU as sharing the
    pool's bandwidth. The lane budget and all bandwidths update with every change.
@@ -38,9 +39,14 @@ no server, no accounts, nothing is sent anywhere. Configurations can be saved an
    alone and with several requests, expert-cache hit, KV room, VRAM per card, and why something does not fit.
    Measured values can be entered and override the derived ones.
 3. **Roles & simulate** — coordinator, maker, sub-makers, output guard, judge, reranker. A workload described
-   as ranges, sampled per scenario. One button runs every concurrency level and shows tasks per hour as
-   percentile bands, utilisation per engine and GPU, hosted cost, call rates, and a ranked list of what
-   limits throughput.
+   as ranges, sampled per scenario, with two levers: *work per task* (how many turns and tool calls a task
+   takes — a stronger model needs fewer) and *attempts per task* (how often a task is redone). One button
+   runs every concurrency level. The headline numbers are machine-level and model-independent: **tokens
+   per second** served (reads and writes), **watts**, **tokens per second per watt** and one **machine
+   utilisation** figure (busy share averaged over every GPU and the CPU pool). Tasks per hour is shown
+   below them, because it depends entirely on the models and the levers; then utilisation per engine
+   and GPU with each engine's tok/s and watts, hosted cost, call rates, and a ranked list of what limits
+   throughput.
 4. **Live run** — one scenario replayed at 10–1000×: a log of every request and gauges per engine, GPU, PCIe
    link, CPU cores and memory bandwidth.
 5. **Calibration data** — every measured point the model was fitted to or checked against, with sources, and
@@ -72,13 +78,19 @@ Forty-one further points were **held out**: more cells from the same machine, St
 on 3090 / 4090), and across the prebuilts: M1 Ultra, M3 Ultra, M4 Max, M5 Max and M5 Ultra in other
 formats and in prompt processing (llama.cpp discussion #4167), Strix Halo prompt processing and a 27B dense
 model with and without MTP plus the RX 7900 XTX (ROCm scoreboard #15021), and the Spark's prompt rate
-(#16578). Result: 17 of 17 calibration points and 37 of 41 held-out points within ±30 %, median error
-8 % and 14 %, worst held-out miss ±35 %. `backend/tests/test_validation.py` keeps the model inside those
+(#16578). Result: 17 of 17 calibration points and 38 of 41 held-out points within ±30 %, median error
+8 % and 14 %, worst held-out miss 37 %. `backend/tests/test_validation.py` keeps the model inside those
 bounds; the *Calibration data* page recomputes the whole table from the current code.
+
+**On tasks per hour.** A "task" here is whatever the workload ranges describe; a better model finishes a
+task in fewer turns and fewer retries, so the same hardware yields more tasks per hour with it. The
+simulator cannot know that from the hardware, which is why the levers exist and why the machine-level
+tokens per second, watts and utilisation are the numbers to compare machines by.
 
 What this does **not** cover: models other than the ones in the catalog (sizes are spec-sheet figures and
 parameter counts, not measurements), GPUs the reports did not include (spec-sheet bandwidth with the same
-efficiency constants), Strata on unified memory (no public measurement exists; the CPU expert path on NEON
+efficiency constants), the power-cap curve beyond one card and one cap (the box's 3090s at 250 W; the
+curve's shape is a guess until capped measurement records arrive), Strata on unified memory (no public measurement exists; the CPU expert path on NEON
 is a guess), two engines sharing a card (VRAM and utilisation are summed, neither is slowed),
 chipset lanes and slot spacing, thermals and power limits, answer quality. The workload ranges on the roles
 page are assumptions until real traces replace them. See `docs/predictions/` for numbers written down before

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from .catalog.cpus import CPU_BY_ID, E_CORE_WEIGHT, ISA_GBS_PER_GHZ, OS_FACTOR, RAM_SPEEDS
 from .catalog.cpus import SOC_RAM_BW
-from .catalog.gpus import EXTERNAL_LINKS, GPU_BY_ID, PCIE_LANE_GBS, SOC_GPU_FOR, SSD_BY_ID
+from .catalog.gpus import EXTERNAL_LINKS, GPU_BY_ID, PCIE_LANE_GBS, SOC_GPU_FOR, SSD_BY_ID, power_factors, power_range
 from .schemas import Machine
 
 RAM_EFFICIENCY = 0.72      # measured stream share of the theoretical channel bandwidth
@@ -58,7 +58,7 @@ def validate(m: Machine) -> dict:
         per_cpu[i] = dict(
             isa=spec["isa"], e_cores=spec["e_cores"], all_core_ghz=spec["all_core_ghz"], eff_cores=round(eff_cores, 1),
             expert_gbs_per_core=round(per_core, 2), os=m.os,
-            name=spec["name"], cores=spec["cores"], threads=spec["threads"], lanes_total=spec["pcie_lanes"],
+            name=spec["name"], cores=spec["cores"], threads=spec["threads"], lanes_total=spec["pcie_lanes"], tdp_w=spec["tdp_w"],
             lanes_used=0, pcie_gen=spec["pcie_gen"], ram_gb=slot.ram_gb, ram_channels=slot.ram_channels,
             ram_mts=slot.ram_mts,
             ram_bw_gbs=(float(SOC_RAM_BW[spec["id"]]) if spec["id"] in SOC_RAM_BW
@@ -117,8 +117,22 @@ def validate(m: Machine) -> dict:
             warnings.append(f"{d.id}: {d.capacity_tb} TB is not a listed capacity for {spec['name']}")
         if d.kind == "gpu" and spec["form"] not in ("pcie", "soc"):
             warnings.append(f"{d.id}: {spec['name']} is an {spec['form'].upper()} module, modelled as a x16 link")
+        power_w, pf = None, (1.0, 1.0)
+        if d.kind == "gpu":
+            rng = power_range(spec)
+            if rng is not None:
+                power_w = float(d.power_w) if d.power_w else float(rng[1])
+                if power_w < rng[0] or power_w > rng[1]:
+                    errors.append(f"{d.id}: power cap {power_w:g} W outside {spec['name']}'s range {rng[0]}–{rng[1]} W")
+                    power_w = min(max(power_w, rng[0]), rng[1])
+                pf = power_factors(spec, power_w)
+            elif d.power_w:
+                warnings.append(f"{d.id}: {spec['name']} has no settable power cap; the value is ignored")
+        idle_w = round((spec["tdp_w"] if d.kind == "gpu" else 5) * (0.08 if spec.get("form") == "soc" else 0.07), 1)
         devices[d.id] = dict(id=d.id, kind=d.kind, model_id=d.model_id, name=spec["name"], cpu=d.cpu, link_gen=gen,
-                             link_width=width, link_bw_gbs=round(bw, 2), link_type=link_type, spec=spec, capacity_tb=d.capacity_tb)
+                             link_width=width, link_bw_gbs=round(bw, 2), link_type=link_type, spec=spec, capacity_tb=d.capacity_tb,
+                             power_w=power_w, power_range=power_range(spec) if d.kind == "gpu" else None,
+                             power_bw_factor=round(pf[0], 3), power_compute_factor=round(pf[1], 3), idle_w=idle_w)
         cpu["devices"].append(d.id)
 
     for i, cpu in per_cpu.items():

@@ -6,9 +6,9 @@ from app.perf import derive
 from app.schemas import CpuSlot, EngineSpec, Machine, PcieDevice
 
 BOX = Machine(cpus=[CpuSlot(cpu_id="i9-10900x", ram_gb=128, ram_mts=3200, ram_channels=4)],
-              devices=[PcieDevice(id="gpu-1", kind="gpu", model_id="rtx-3090", link_gen=3, link_width=16),
-                       PcieDevice(id="gpu-2", kind="gpu", model_id="rtx-3090", link_gen=3, link_width=16),
-                       PcieDevice(id="gpu-3", kind="gpu", model_id="rtx-3090", link_gen=3, link_width=8),
+              devices=[PcieDevice(id="gpu-1", kind="gpu", model_id="rtx-3090", link_gen=3, link_width=16, power_w=250),
+                       PcieDevice(id="gpu-2", kind="gpu", model_id="rtx-3090", link_gen=3, link_width=16, power_w=250),
+                       PcieDevice(id="gpu-3", kind="gpu", model_id="rtx-3090", link_gen=3, link_width=8, power_w=250),
                        PcieDevice(id="gpu-4", kind="gpu", model_id="rtx-3060-12g", link_gen=3, link_width=4)])
 INFO = validate(BOX)
 

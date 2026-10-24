@@ -22,7 +22,7 @@ export type Catalog = { cpus: Cpu[]; gpus: Gpu[]; ssds: Ssd[]; ram_speeds: Recor
 
 // ---------------------------------------------------------------- config types
 export type CpuSlot = { cpu_id: string; enabled: boolean; ram_gb: number; ram_mts: number; ram_channels: number };
-export type Device = { id: string; kind: "gpu" | "ssd"; model_id: string; cpu: number; link_gen: number; link_type?: string;
+export type Device = { id: string; kind: "gpu" | "ssd"; model_id: string; cpu: number; link_gen: number; link_type?: string; power_w?: number | null;
   link_width: number; capacity_tb?: number | null };
 export type Machine = { os: "linux" | "windows"; cpus: CpuSlot[]; devices: Device[]; nvlinks: [string, string][] };
 export type EngineSpec = { id: string; name: string; engine: string; version: string; model_id: string;
@@ -35,13 +35,14 @@ export type Workload = { maker_turns: Range; answer_median: Range; tool_calls_me
   fanout: Range; tool_result_median: Range; tool_exec_median_s: Range; p_approval: Range; sub_turns: Range;
   sub_answer_median: Range; sub_tool_calls_mean: Range; sub_final_tokens: Range; task_tokens: Range;
   maker_sys: number; sub_sys: number; window: number; compact_at: number; visible_frac: number;
-  replay_thinking: boolean; tasks_per_ws: number };
+  replay_thinking: boolean; tasks_per_ws: number; work_scale: number; reruns: number };
 
 export const DEFAULT_WORKLOAD: Workload = {
   maker_turns: [6, 30], answer_median: [200, 700], tool_calls_mean: [0.8, 2.0], p_delegate: [0, 0.4], fanout: [1, 4],
   tool_result_median: [500, 3000], tool_exec_median_s: [0.5, 5], p_approval: [0, 0.5], sub_turns: [3, 12],
   sub_answer_median: [200, 500], sub_tool_calls_mean: [0.8, 1.6], sub_final_tokens: [300, 1500], task_tokens: [200, 1500],
   maker_sys: 11000, sub_sys: 5500, window: 32768, compact_at: 0.8, visible_frac: 0.1, replay_thinking: false, tasks_per_ws: 3,
+  work_scale: 1, reruns: 1,
 };
 
 export const WORKLOAD_HELP: Record<string, string> = {
@@ -60,9 +61,9 @@ export const DEFAULT_MACHINE: Machine = {
          { cpu_id: "i9-10900x", enabled: false, ram_gb: 128, ram_mts: 3200, ram_channels: 4 }],
   devices: [
     { id: "ssd-1", kind: "ssd", model_id: "nvme-gen3", cpu: 0, link_gen: 3, link_width: 4, capacity_tb: 2 },
-    { id: "gpu-1", kind: "gpu", model_id: "rtx-3090", cpu: 0, link_gen: 3, link_width: 16 },
-    { id: "gpu-2", kind: "gpu", model_id: "rtx-3090", cpu: 0, link_gen: 3, link_width: 16 },
-    { id: "gpu-3", kind: "gpu", model_id: "rtx-3090", cpu: 0, link_gen: 3, link_width: 8 },
+    { id: "gpu-1", kind: "gpu", model_id: "rtx-3090", cpu: 0, link_gen: 3, link_width: 16, power_w: 250 },
+    { id: "gpu-2", kind: "gpu", model_id: "rtx-3090", cpu: 0, link_gen: 3, link_width: 16, power_w: 250 },
+    { id: "gpu-3", kind: "gpu", model_id: "rtx-3090", cpu: 0, link_gen: 3, link_width: 8, power_w: 250 },
     { id: "gpu-4", kind: "gpu", model_id: "rtx-3060-12g", cpu: 0, link_gen: 3, link_width: 4 },
   ],
   nvlinks: [],

@@ -49,7 +49,14 @@ def sample_scenario(rng: random.Random, w) -> dict:
         s[k] = rng.randint(int(lo), int(hi)) if isinstance(lo, int) and isinstance(hi, int) else rng.uniform(lo, hi)
     s.update(FIXED)
     s.update(maker_sys=w.maker_sys, sub_sys=w.sub_sys, window=w.window, compact_at=w.compact_at,
-             visible_frac=w.visible_frac, tasks_per_ws=w.tasks_per_ws, judge_history_cap=w.window // 2)
+             visible_frac=w.visible_frac, tasks_per_ws=w.tasks_per_ws, judge_history_cap=w.window // 2,
+             work_scale=float(getattr(w, "work_scale", 1.0) or 1.0), reruns=float(getattr(w, "reruns", 1.0) or 1.0))
+    # the work lever scales what one task is: turns of the maker and of its sub-agents, and tool calls per turn
+    if s["work_scale"] != 1.0:
+        for k in ("maker_turns", "sub_turns"):
+            s[k] = max(1, int(round(s[k] * s["work_scale"])))
+        for k in ("tool_calls_mean", "sub_tool_calls_mean"):
+            s[k] = s[k] * s["work_scale"] ** 0.5
     return s
 
 
@@ -81,6 +88,7 @@ class Turn:
 class Task:
     task_tokens: int
     turns: list
+    reruns: int = 0           # extra attempts before the task counts
 
 
 def _lognorm(rng, median, sigma, lo=1, hi=None):
@@ -137,10 +145,19 @@ def make_task(rng: random.Random, s: dict) -> Task:
 
 
 def make_scripts(seed: int, s: dict, n_ws: int) -> list[list[Task]]:
+    """The reruns lever: a task counts once but is run `reruns` times on average (a weak model needs a
+    second attempt). 1.5 means every other task runs twice; the extra runs are scheduled as work, not as tasks."""
     out = []
+    reruns = float(s.get("reruns", 1.0) or 1.0)
     for w in range(n_ws):
         rng = random.Random(f"{seed}-{w}")
-        out.append([make_task(rng, s) for _ in range(int(s["tasks_per_ws"]))])
+        tasks = []
+        for _ in range(int(s["tasks_per_ws"])):
+            t = make_task(rng, s)
+            extra = int(reruns) - 1 + (1 if rng.random() < (reruns - int(reruns)) else 0)
+            t.reruns = extra
+            tasks.append(t)
+        out.append(tasks)
     return out
 
 
@@ -252,11 +269,12 @@ def _coord(s, ids, conv, ctx, out, tag):
 def workstream(s, ids, w, tasks, log, task_log, now, roles):
     for ti, task in enumerate(tasks):
         t0 = now()
-        conv = ids.next(f"m{w}-")
-        if roles.get("coordinator"):
-            yield from _coord(s, ids, f"c{w}-{ti}", s["coord_plan_tokens"], s["coord_plan_out"], (w, ti))
-        yield from _chat("maker", s, ids, conv, "maker", s["maker_sys"], task.task_tokens, task.turns,
-                         "maker", (w, ti), log, roles=roles)
-        if roles.get("coordinator"):
-            yield from _coord(s, ids, f"c{w}-{ti}", s["coord_review_tokens"], s["coord_review_out"], (w, ti))
-        task_log.append({"ws": w, "task": ti, "start": t0, "end": now()})
+        for attempt in range(1 + int(getattr(task, "reruns", 0))):      # reruns: the same task again, fresh conversation
+            conv = ids.next(f"m{w}-")
+            if roles.get("coordinator"):
+                yield from _coord(s, ids, f"c{w}-{ti}", s["coord_plan_tokens"], s["coord_plan_out"], (w, ti))
+            yield from _chat("maker", s, ids, conv, "maker", s["maker_sys"], task.task_tokens, task.turns,
+                             "maker", (w, ti), log, roles=roles)
+            if roles.get("coordinator"):
+                yield from _coord(s, ids, f"c{w}-{ti}", s["coord_review_tokens"], s["coord_review_out"], (w, ti))
+        task_log.append({"ws": w, "task": ti, "start": t0, "end": now(), "attempts": 1 + int(getattr(task, "reruns", 0))})

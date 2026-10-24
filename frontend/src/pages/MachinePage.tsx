@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { api, useStore, type Catalog, type Device, type Machine } from "../store";
 import { Bar, Field, LinkTicks, Notices, Select } from "../components/ui";
 
+type DevInfo = { link_gen: number; link_width: number; link_bw_gbs: number; link_type?: string; power_w?: number | null;
+  power_range?: [number, number] | null; power_bw_factor?: number; power_compute_factor?: number };
 type Validation = {
   ok: boolean; errors: string[]; warnings: string[];
   cpus: Record<string, { name: string; cores: number; lanes_total: number; lanes_used: number; pcie_gen: number;
@@ -186,12 +188,13 @@ export default function MachinePage() {
                         <span className="font-medium text-sm w-12">{d.id}</span>
                         <Select value={d.model_id} options={gpuOptions}
                                 onChange={(id) => patch((m) => { const x = m.devices.find((y) => y.id === d.id)!; const g = catalog.gpus.find((y) => y.id === id)!;
-                                  x.model_id = id; x.link_gen = Math.min(x.link_gen, g.pcie_gen); x.link_width = Math.min(x.link_width, g.pcie_lanes);
+                                  x.model_id = id; x.power_w = null; x.link_gen = Math.min(x.link_gen, g.pcie_gen); x.link_width = Math.min(x.link_width, g.pcie_lanes);
                                   m.nvlinks = m.nvlinks.filter((p) => !p.includes(d.id)); })} />
                         <span className="text-xs text-muted">{spec.vram_gb} GB · {spec.mem_bw_gbs} GB/s · {spec.fp16_tflops} TFLOPS</span>
                         <button className="btn btn-quiet ml-auto" onClick={() => removeDevice(d.id)} aria-label={`Remove ${d.id}`}>Remove</button>
                       </div>
                       <LinkRow d={d} maxGen={spec.pcie_gen} maxWidth={spec.pcie_lanes} dv={dv} activeCpus={activeCpus.map((c) => c.i)} setDevice={setDevice} />
+                      <PowerRow d={d} dv={dv as DevInfo | undefined} setDevice={setDevice} />
                     </div>
                   </div>
                 );
@@ -213,6 +216,24 @@ function Dimms({ channels, max }: { channels: number; max: number }) {
         <rect key={i} x={i * 10 + 1} y="2" width="6" height="40" rx="1.5" fill={i < channels ? "#1F6B5B" : "#E3E8E6"} stroke={i < channels ? "none" : "#C9D1CE"} />
       ))}
     </svg>
+  );
+}
+
+function PowerRow({ d, dv, setDevice }: { d: Device; dv?: DevInfo; setDevice: (id: string, fn: (d: Device) => void) => void }) {
+  const rng = dv?.power_range;
+  if (!rng) return null;
+  const val = d.power_w ?? rng[1];
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-3 text-xs">
+      <label className="flex items-center gap-2">power cap
+        <input type="range" min={rng[0]} max={rng[1]} step={5} value={val} aria-label={`power cap ${d.id}`} className="w-32"
+               onChange={(e) => setDevice(d.id, (x) => { x.power_w = Number(e.target.value) === rng[1] ? null : Number(e.target.value); })} />
+        <span className="w-14">{val} W</span>
+      </label>
+      {d.power_w ? (
+        <span className="text-muted">{Math.round((1 - (dv?.power_compute_factor ?? 1)) * 100)} % slower prompts, {Math.round((1 - (dv?.power_bw_factor ?? 1)) * 100)} % slower writing</span>
+      ) : <span className="text-muted">default limit ({rng[0]}–{rng[1]} W settable)</span>}
+    </div>
   );
 }
 
