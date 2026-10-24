@@ -51,6 +51,18 @@ SOURCES = {
                            url=STRATA + "2026-10-02-community-rtx4000ada-layer-split", note="IQ3_S, 2- vs 3-card layer split, 16.6K prompt."),
     "llamacpp-table": dict(name="llama.cpp CUDA table with build numbers (r/LocalLLaMA, 2024-11)",
                            url="https://www.reddit.com/r/LocalLLaMA/comments/1ghvwsj/", note="Llama 3.1 8B Q4_0, b4011, flash attention on: pp512 / tg128 for 3090, 4090, 3050, M2, EPYC."),
+    "llamacpp-apple": dict(name="llama.cpp discussion #4167: Performance of llama.cpp on Apple Silicon M-series (ggerganov)",
+                           url="https://github.com/ggml-org/llama.cpp/discussions/4167",
+                           note="Llama 2 7B F16/Q8_0/Q4_0, pp512 / tg128, Metal, every M-series chip; pinned builds (8e672ef for M1–M4, "
+                                "c1d0e7a with flash attention for the M5 family and the 2026 re-runs). The 2023 build is 15–30 % slower than today's."),
+    "llamacpp-rocm": dict(name="llama.cpp discussion #15021: Performance of llama.cpp on AMD ROCm (HIP)",
+                          url="https://github.com/ggml-org/llama.cpp/discussions/15021",
+                          note="Llama 2 7B Q4_0 pp512 / tg128 scoreboard with commits and ROCm versions; Strix Halo (Ryzen AI Max+ 395) and "
+                               "discrete RDNA cards; Qwen3.8-27B Q5_K_M on Strix Halo from a user matrix with scripts."),
+    "llamacpp-spark": dict(name="llama.cpp discussion #16578: Performance of llama.cpp on NVIDIA DGX Spark (ggerganov)",
+                           url="https://github.com/ggml-org/llama.cpp/discussions/16578",
+                           note="gpt-oss-120b MXFP4 and others, pp2048 / tg32 at context depths 0–32K, build 6767; a second user's run of the "
+                                "same model came out 20 % lower (42 vs 53 tok/s), which bounds the reproducibility."),
     "kunal-32b": dict(name="kunalganglani.com LLM benchmarks (marked 'measured')",
                       url="https://kunalganglani.com/llm-benchmarks", note="Qwen2.5-32B Q4_K_M on 3090 / 4090; used only as a held-out check."),
 }
@@ -116,6 +128,56 @@ def run():
     m = machine("epyc-7313p", 125, 3200, 8, ["rtx-4000-ada", "rtx-4000-ada"], 4)
     add("VAL", "2x RTX 4000 Ada + EPYC 7313P: IQ3_S decode", strata(m, 2, 16, batch=1).decode_total[1], 70, "strata-4000ada")
     add("VAL", "2x RTX 4000 Ada: 16.6K prompt tok/s", strata(m, 2, 16, batch=1).prefill_rate, 2117, "strata-4000ada")
+
+    # --- unified-memory prebuilts: Apple Silicon (llama.cpp #4167) ----------------------------------------
+    def soc(cpu, gpu, ram, mts=8533):
+        return validate(Machine(cpus=[CpuSlot(cpu_id=cpu, ram_gb=ram, ram_mts=mts, ram_channels=8)],
+                                devices=[PcieDevice(id="gpu-1", kind="gpu", model_id=gpu, link_gen=4, link_width=16)]))
+
+    def mac(info, quant, ctx=512):          # tg128 / pp512 benches run at a short context
+        return derive(EngineSpec(id="l", engine="llama.cpp", version="b11552", model_id="llama-2-7b", gpus=["gpu-1"], cpu_cores=8,
+                                 args={"quantization": quant, "parallel": 1, "ctx_size": ctx}), info)
+    m2u = soc("apple-m2-ultra", "m2-ultra-gpu", 192, 6400)
+    add("CAL", "M2 Ultra 76c (2026 build): Llama 2 7B Q4_0 tg128", mac(m2u, "q4_0").speed_per_request[1], 125.2, "llamacpp-apple")
+    add("CAL", "M2 Ultra 76c (2026 build): Llama 2 7B F16 tg128", mac(m2u, "fp16").speed_per_request[1], 49.6, "llamacpp-apple")
+    add("VAL", "M2 Ultra 76c (2026 build): Llama 2 7B F16 pp512", mac(m2u, "fp16").prefill_rate, 1628, "llamacpp-apple")
+    add("VAL", "M2 Ultra 76c (2026 build): Llama 2 7B Q4_0 pp512", mac(m2u, "q4_0").prefill_rate, 1489, "llamacpp-apple")
+    m1u = soc("apple-m1-ultra", "m1-ultra-gpu", 128, 6400)
+    add("VAL", "M1 Ultra 64c (2026 build): Llama 2 7B Q4_0 tg128", mac(m1u, "q4_0").speed_per_request[1], 113.8, "llamacpp-apple")
+    add("VAL", "M1 Ultra 64c (2026 build): Llama 2 7B F16 tg128", mac(m1u, "fp16").speed_per_request[1], 47.8, "llamacpp-apple")
+    m5m = soc("apple-m5-max", "m5-max-gpu", 128)
+    add("CAL", "M5 Max 40c (tensor units): Llama 2 7B Q4_0 tg128", mac(m5m, "q4_0").speed_per_request[1], 119.9, "llamacpp-apple")
+    add("VAL", "M5 Max 40c: Llama 2 7B F16 pp512", mac(m5m, "fp16").prefill_rate, 3158, "llamacpp-apple")
+    add("VAL", "M5 Max 40c: Llama 2 7B Q8_0 tg128", mac(m5m, "q8_0").speed_per_request[1], 72.4, "llamacpp-apple")
+    m5u = soc("apple-m5-ultra", "m5-ultra-gpu", 256)
+    add("VAL", "M5 Ultra 80c: Llama 2 7B Q4_0 tg128", mac(m5u, "q4_0").speed_per_request[1], 179.1, "llamacpp-apple")
+    add("VAL", "M5 Ultra 80c: Llama 2 7B F16 pp512", mac(m5u, "fp16").prefill_rate, 5207, "llamacpp-apple")
+    m4m = soc("apple-m4-max", "m4-max-gpu", 128)
+    add("VAL", "M4 Max 40c (2023 build): Llama 2 7B Q4_0 tg128", mac(m4m, "q4_0").speed_per_request[1], 83.1, "llamacpp-apple")
+    add("VAL", "M4 Max 40c (2023 build): Llama 2 7B F16 pp512", mac(m4m, "fp16").prefill_rate, 923, "llamacpp-apple")
+    m3u = soc("apple-m3-ultra", "m3-ultra-gpu", 512)
+    add("VAL", "M3 Ultra 80c (2023 build): Llama 2 7B Q4_0 tg128", mac(m3u, "q4_0").speed_per_request[1], 92.1, "llamacpp-apple")
+
+    # --- Strix Halo and discrete RDNA (llama.cpp #15021) ------------------------------------------------
+    sh = soc("amd-ai-max-395", "strix-halo-gpu", 128, 8000)
+    add("CAL", "Ryzen AI Max+ 395 (Strix Halo, ROCm 7.14): Llama 2 7B Q4_0 tg128", mac(sh, "q4_0").speed_per_request[1], 49.1, "llamacpp-rocm")
+    add("VAL", "Strix Halo: Llama 2 7B Q4_0 pp512", mac(sh, "q4_0").prefill_rate, 1144, "llamacpp-rocm")
+    q27 = derive(EngineSpec(id="l", engine="llama.cpp", version="b11552", model_id="qwen3.8-27b", gpus=["gpu-1"], cpu_cores=8,
+                            args={"quantization": "q5_k_m", "parallel": 1, "ctx_size": 4096, "mtp": False}), sh)
+    add("VAL", "Strix Halo: Qwen3.8-27B Q5_K_M decode, MTP off", q27.speed_per_request[1], 10.6, "llamacpp-rocm")
+    q27m = derive(EngineSpec(id="l", engine="llama.cpp", version="b11552", model_id="qwen3.8-27b", gpus=["gpu-1"], cpu_cores=8,
+                             args={"quantization": "q5_k_m", "parallel": 1, "ctx_size": 4096, "mtp": True}), sh)
+    add("VAL", "Strix Halo: Qwen3.8-27B Q5_K_M decode, MTP on (Vulkan)", q27m.speed_per_request[1], 17.0, "llamacpp-rocm")
+    xtx = machine("ryzen9-7950x", 64, 5200, 2, ["rx-7900xtx"], 4)
+    add("VAL", "RX 7900 XTX (ROCm): Llama 2 7B Q4_0 tg128", mac(xtx, "q4_0").speed_per_request[1], 125, "llamacpp-rocm")
+    add("VAL", "RX 7900 XTX (ROCm): Llama 2 7B Q4_0 pp512", mac(xtx, "q4_0").prefill_rate, 3550, "llamacpp-rocm")
+
+    # --- DGX Spark (llama.cpp #16578) ------------------------------------------------------------------
+    sp = soc("gb10", "gb10-gpu", 128)
+    oss = derive(EngineSpec(id="l", engine="llama.cpp", version="b11552", model_id="gpt-oss-120b", gpus=["gpu-1"], cpu_cores=16,
+                            args={"quantization": "mxfp4", "parallel": 1, "ctx_size": 4096}), sp)
+    add("CAL", "DGX Spark: gpt-oss-120b MXFP4 tg32", oss.speed_per_request[1], 52.9, "llamacpp-spark")
+    add("VAL", "DGX Spark: gpt-oss-120b MXFP4 pp2048", oss.prefill_rate, 1689, "llamacpp-spark")
 
     # --- llama.cpp dense models, public tables -------------------------------------------------------
     m = machine("ryzen9-7950x", 64, 5200, 2, ["rtx-3090"], 4)

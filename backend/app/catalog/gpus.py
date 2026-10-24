@@ -13,10 +13,13 @@ GPUS = [
     ("rtx-2080ti", "GeForce RTX 2080 Ti", "NVIDIA", 2018, 11, 616, 108, 3, 16, 50, 2, 250, "pcie"),
     # integrated GPUs of unified-memory systems (form "soc": bandwidth = the pool, no PCIe link)
     ("gb10-gpu", "GB10 Blackwell iGPU (DGX Spark)", "NVIDIA", 2025, 128, 273, 31, 5, 0, 0, 0, 100, "soc"),
-    ("m4-max-gpu", "Apple M4 Max 40-core GPU", "Apple", 2024, 128, 546, 34, 4, 0, 0, 0, 60, "soc"),
-    ("m3-ultra-gpu", "Apple M3 Ultra 80-core GPU", "Apple", 2025, 512, 819, 54, 4, 0, 0, 0, 180, "soc"),
+    ("m4-max-gpu", "Apple M4 Max 40-core GPU", "Apple", 2024, 128, 546, 18, 4, 0, 0, 0, 60, "soc"),
+    ("m3-ultra-gpu", "Apple M3 Ultra 80-core GPU", "Apple", 2025, 512, 819, 28, 4, 0, 0, 0, 180, "soc"),
     ("m2-ultra-gpu", "Apple M2 Ultra 76-core GPU", "Apple", 2023, 192, 800, 27, 4, 0, 0, 0, 200, "soc"),
-    ("strix-halo-gpu", "Radeon 8060S (Strix Halo iGPU)", "AMD", 2025, 96, 256, 30, 4, 0, 0, 0, 100, "soc"),
+    ("m5-max-gpu", "Apple M5 Max 40-core GPU (tensor units)", "Apple", 2026, 128, 614, 55, 4, 0, 0, 0, 70, "soc"),
+    ("m5-ultra-gpu", "Apple M5 Ultra 80-core GPU (tensor units)", "Apple", 2026, 512, 1228, 100, 4, 0, 0, 0, 220, "soc"),
+    ("m1-ultra-gpu", "Apple M1 Ultra 64-core GPU", "Apple", 2022, 128, 800, 21, 4, 0, 0, 0, 200, "soc"),
+    ("strix-halo-gpu", "Radeon 8060S (Strix Halo iGPU)", "AMD", 2025, 96, 256, 45, 4, 0, 0, 0, 100, "soc"),
     ("rtx-3060-12g", "GeForce RTX 3060 12 GB", "NVIDIA", 2021, 12, 360, 51, 4, 16, 0, 2, 170, "pcie"),
     ("rtx-3080-10g", "GeForce RTX 3080 10 GB", "NVIDIA", 2020, 10, 760, 119, 4, 16, 0, 2, 320, "pcie"),
     ("rtx-3090", "GeForce RTX 3090", "NVIDIA", 2020, 24, 936, 142, 4, 16, 112, 3, 350, "pcie"),
@@ -71,24 +74,51 @@ SSDS = [
 SSD_FIELDS = ["id", "name", "pcie_gen", "pcie_lanes", "seq_read_gbs", "rand_read_mbs", "capacities_tb"]
 SSD_BY_ID = {row[0]: dict(zip(SSD_FIELDS, row)) for row in SSDS}
 
-def kernel_efficiency(gpu: dict) -> float:
-    """Older architectures run today's quantised kernels less efficiently (no bf16, smaller
-    caches, slower tensor cores): Pascal ~0.35, Turing ~0.55, Ampere and later 1.0. Calibrated
-    on Strata community reports (2 x TITAN RTX, 2 x P40) and llama.cpp tables."""
+def kernel_efficiency(gpu: dict, bpw: float = 4.5) -> float:
+    """Bandwidth factor: how much of the generic bandwidth efficiency a decode kernel reaches on this
+    architecture. Pascal ~0.35, Turing ~0.55 (Strata community reports), Ampere and later 1.0; the GB10
+    0.8 (llama.cpp DGX Spark sweeps); AMD RDNA 1.0 (ROCm scoreboard). Apple Metal depends on the weight
+    format: F16 GEMV reaches ~83 % of the bus, Q8 ~74 %, Q4 ~60 % (the llama.cpp M-series table), so the
+    factor rises with bits per weight; M5 and later gain another 20 % from the tensor units' read
+    interleaving."""
     if gpu["vendor"] == "NVIDIA":
         if gpu["year"] <= 2016:
             return 0.35
         if gpu["year"] <= 2018 and gpu["id"] not in ("v100-32g",):
             return 0.55
+        if gpu["id"] == "gb10-gpu":
+            return 0.8
         return 1.0
     if gpu["vendor"] == "AMD":
-        return 0.8
+        return 1.0
+    if gpu["vendor"] == "Apple":
+        f = 0.75 + 0.03 * min(16.0, max(2.0, bpw))
+        return f * (1.2 if gpu["year"] >= 2026 else 1.0)
     return 0.7
+
+
+def compute_efficiency(gpu: dict) -> float:
+    """Compute factor for prompt processing, on top of the generic FLOP efficiency. Apple GPUs before the M5
+    have no tensor cores and run F16 and Q4 prompts at the same rate (0.9 of the generic figure); AMD RDNA 0.7
+    (Strix Halo, 7900 XTX); the GB10 0.7 (MoE prompt kernels on the Spark); everything else 1.0."""
+    if gpu["vendor"] == "Apple":
+        return 1.3          # Apple quotes FP32 peaks; F16 GEMM on Metal lands near 0.8 of them
+    if gpu["vendor"] == "AMD":
+        return 0.7
+    if gpu["id"] == "gb10-gpu":
+        return 0.95
+    return kernel_efficiency(gpu)
+
+
+def layer_overhead_factor(gpu: dict) -> float:
+    """Per-layer dispatch overhead relative to CUDA: Metal 3x (the M-series table's Q4 vs F16 gap)."""
+    return 1.5 if gpu["vendor"] == "Apple" else 1.0
 
 
 # which SoC an integrated GPU belongs to; the GPU shares that CPU's memory pool
 SOC_GPU_FOR = {"gb10-gpu": "gb10", "m4-max-gpu": "apple-m4-max", "m3-ultra-gpu": "apple-m3-ultra",
-               "m2-ultra-gpu": "apple-m2-ultra", "strix-halo-gpu": "amd-ai-max-395"}
+               "m2-ultra-gpu": "apple-m2-ultra", "m5-max-gpu": "apple-m5-max", "m5-ultra-gpu": "apple-m5-ultra",
+               "m1-ultra-gpu": "apple-m1-ultra", "strix-halo-gpu": "amd-ai-max-395"}
 
 # external links for eGPU enclosures and USB4/Thunderbolt SSDs: usable bandwidth per direction, GB/s
 EXTERNAL_LINKS = {"tb3": 2.8, "tb4": 3.0, "usb4": 3.0, "usb4v2": 6.5, "tb5": 9.0}

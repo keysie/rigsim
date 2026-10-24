@@ -25,6 +25,9 @@ MODELS = [
     dict(id="gemma-3-27b", name="Gemma 3 27B", family="gemma", params_b=27, active_b=27, layers=62, experts=0,
          active_experts=0, shared_experts=0, expert_share=0.0, kv_kb_per_token=250, recurrent_state_mb=0,
          mtp=False, vision=True, max_context=131072, year=2025),
+    dict(id="llama-2-7b", name="Llama 2 7B (the llama.cpp benchmark model)", family="llama", params_b=6.74, active_b=6.74,
+         layers=32, experts=0, active_experts=0, shared_experts=0, expert_share=0.0, kv_kb_per_token=512, recurrent_state_mb=0,
+         mtp=False, vision=False, max_context=4096, year=2023),
     dict(id="llama-3.1-8b", name="Llama 3.1 8B", family="llama", params_b=8.0, active_b=8.0, layers=32, experts=0,
          active_experts=0, shared_experts=0, expert_share=0.0, kv_kb_per_token=128, recurrent_state_mb=0,
          mtp=False, vision=False, max_context=131072, year=2024),
@@ -60,7 +63,7 @@ MODEL_BY_ID = {m["id"]: m for m in MODELS}
 
 # bits per weight including scales/zeros overhead
 QUANTS = {
-    "fp16": 16.0, "fp8": 8.5, "q8_0": 8.5, "awq4": 4.6, "q4_k_m": 4.8, "iq4_xs": 4.3, "q4_0": 4.5,
+    "fp16": 16.0, "fp8": 8.5, "q8_0": 8.5, "q6_k": 6.6, "q5_k_m": 5.7, "awq4": 4.6, "q4_k_m": 4.8, "iq4_xs": 4.3, "q4_0": 4.5, "mxfp4": 4.3,
     "iq3_s": 3.5, "iq3_xxs": 3.1, "q2_k": 2.9, "q2_0": 2.6, "iq2_xs": 2.4, "iq1_m": 1.9,
 }
 
@@ -126,12 +129,12 @@ ENGINES = {
     "llama.cpp": dict(
         name="llama.cpp", kind="local",
         models=["qwen3.8-27b", "qwen3-32b", "qwen3-235b-a22b", "ministral-3-3b", "granite-4.2-8b", "gemma-3-27b",
-                "llama-3.1-8b", "qwen2.5-32b", "llama-3.3-70b", "llama-4-scout", "gpt-oss-120b", "mixtral-8x7b",
+                "llama-2-7b", "llama-3.1-8b", "qwen2.5-32b", "llama-3.3-70b", "llama-4-scout", "gpt-oss-120b", "mixtral-8x7b",
                 "phi-4-14b", "bge-reranker-v2-m3"],
         versions={
             "b11552": dict(args=[
                 dict(name="quantization", type="choice", default="q4_k_m",
-                     options=["fp16", "q8_0", "q4_k_m", "iq4_xs", "q4_0", "iq3_s", "iq3_xxs", "q2_k"], help="GGUF weights"),
+                     options=["fp16", "q8_0", "q6_k", "q5_k_m", "q4_k_m", "iq4_xs", "q4_0", "mxfp4", "iq3_s", "iq3_xxs", "q2_k"], help="GGUF weights"),
                 dict(name="parallel", type="int", default=1, min=1, max=16, help="slots"),
                 dict(name="ctx_size", type="int", default=32768, min=2048, max=262144, help="context per slot"),
                 dict(name="n_gpu_layers", type="choice", default="all", options=["all", "75%", "50%", "25%", "0"],

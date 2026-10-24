@@ -15,6 +15,8 @@ PREBUILTS = [
          machine=_soc("apple-m4-max", "m4-max-gpu", 128, 8533)),
     dict(id="mac-studio-m3-ultra", name="Mac Studio M3 Ultra (512 GB)", note="819 GB/s unified; the big-model unified box",
          machine=_soc("apple-m3-ultra", "m3-ultra-gpu", 512, 8533)),
+    dict(id="mac-studio-m5-ultra", name="Mac Studio M5 Ultra (512 GB)", note="1,228 GB/s unified, tensor units: the fastest unified box",
+         machine=_soc("apple-m5-ultra", "m5-ultra-gpu", 512, 8533)),
     dict(id="mac-pro-m2-ultra", name="Mac Pro M2 Ultra (192 GB)", note="800 GB/s unified; PCIe slots exist but take no GPUs under macOS",
          machine=_soc("apple-m2-ultra", "m2-ultra-gpu", 192, 6400)),
     dict(id="framework-desktop", name="Framework Desktop (Ryzen AI Max+ 395, 128 GB)", note="Strix Halo, 256 GB/s unified",
