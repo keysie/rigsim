@@ -84,7 +84,7 @@ export default function MachinePage() {
             const speeds = catalog.ram_speeds[spec.mem_type] ?? [];
             const disabled = !slot.enabled;
             return (
-              <div key={i} className={`rounded-md border p-4 ${disabled ? "border-dashed border-line opacity-60" : "border-mask/40"}`}>
+              <div key={i} className={`min-w-0 rounded-md border p-4 ${disabled ? "border-dashed border-line opacity-60" : "border-mask/40"}`}>
                 <div className="flex items-center justify-between">
                   <h2>CPU {i + 1}</h2>
                   {i === 1 && (
@@ -96,9 +96,9 @@ export default function MachinePage() {
                     </label>
                   )}
                 </div>
-                <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto]">
+                <div className="mt-3 grid min-w-0 gap-3 sm:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
                   <Field label="Processor">
-                    <Select ariaLabel={`processor CPU ${i + 1}`} disabled={disabled || i === 1} value={slot.cpu_id}
+                    <Select className="w-full min-w-0" ariaLabel={`processor CPU ${i + 1}`} disabled={disabled || i === 1} value={slot.cpu_id}
                             options={years.map((c) => ({ value: c.id, label: `${c.name} · ${c.cores}c · ${c.year}${c.proposed ? " · community, unverified" : ""}` }))}
                             onChange={(id) => patch((m) => switchCpu(m, id, catalog))} />
                   </Field>
@@ -197,6 +197,10 @@ export default function MachinePage() {
                       </div>
                       <LinkRow d={d} maxGen={spec.pcie_gen} maxWidth={spec.pcie_lanes} dv={dv} activeCpus={activeCpus.map((c) => c.i)} setDevice={setDevice} />
                       <PowerRow d={d} dv={dv as DevInfo | undefined} setDevice={setDevice} />
+                      <label className="mt-2 flex items-center gap-2 text-xs">
+                        <input type="checkbox" aria-label={`display on ${d.id}`} checked={Boolean(d.display)} onChange={(ev) => setDevice(d.id, (x) => { x.display = ev.target.checked; })} />
+                        a screen / desktop is attached to this card <span className="text-muted">(reserves VRAM: ~0.45 GB Linux, ~1.3 GB Windows)</span>
+                      </label>
                     </div>
                   </div>
                 );

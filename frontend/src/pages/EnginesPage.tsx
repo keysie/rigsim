@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { api, useStore, type ArgDef, type EngineSpec } from "../store";
 import { Field, NumInput, Select } from "../components/ui";
 import ExportMeasurement from "../components/ExportMeasurement";
+import StrataLayout, { type Layout } from "../components/StrataLayout";
 
 type Cluster = { key: { gpus: string[]; engine: string; model: string; quant: string; streams: number }; n: number; trust: number;
   results: Record<string, { median: number; n: number; spread: number }>; cpus: string[]; os: string[]; near: string | null };
@@ -11,6 +12,7 @@ type Derived = Record<string, {
   speed_per_request: Record<string, number>; memory: Record<string, unknown>; notes: string[]; errors: string[];
   limits: Record<string, number>;
   arg_states?: Record<string, { disabled: boolean; force: unknown; reason: string }>;
+  layout?: Layout | null;
 }>;
 
 export default function EnginesPage() {
@@ -162,6 +164,10 @@ export default function EnginesPage() {
                     {args.map((a) => <ArgField key={a.name} a={a} value={e.args[a.name]} state={d?.arg_states?.[a.name]}
                                                onChange={(v) => patch(e.id, (x) => { x.args = { ...x.args, [a.name]: v }; })} />)}
                   </div>
+                  {e.engine === "strata" && d?.layout && (
+                    <StrataLayout layout={d.layout} hitGuessed={d.layout.hit_guessed} fixed={e.fixed ?? {}}
+                                  onFixed={(f) => patch(e.id, (x) => { x.fixed = f; })} />
+                  )}
                   {(community[e.id] ?? []).length > 0 && !hosted && (
                     <div className="mt-4 rounded border border-mask/40 bg-mask-soft/40 p-3 text-sm">
                       <div className="font-medium">{(community[e.id] ?? [])[0]?.near ? "Nearest community measurements (not this exact configuration)" : "Community measurements for this configuration"}</div>

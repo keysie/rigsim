@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 
 from .catalog.gpus import compute_efficiency, kernel_efficiency, layer_overhead_factor, power_factors
 from .catalog.models import ENGINES, MODEL_BY_ID, QUANTS
-from . import argrules
+from . import argrules, layout as layout_mod
 
 GPU_BW_EFF = 0.75          # share of spec bandwidth a decode kernel achieves (27B AWQ on a 3090: 39 tok/s; 8B Q4_0: 167)
 GPU_FLOPS_EFF = 0.50       # share of FP16 tensor peak a prefill achieves (dense models; llama.cpp pp512 8B: ~0.68 on 3090/4090)
@@ -49,6 +49,7 @@ class EnginePerf:
     cache_convs: int = 1
     window: int = 32768
     memory: dict = field(default_factory=dict)
+    layout: dict | None = None        # static memory/link layout (Strata): layout.strata_layout
     arg_states: dict = field(default_factory=dict)   # from argrules: disabled / forced arguments with reasons
     watts_busy: float = 0.0        # W drawn by this engine's GPUs (at their caps) and CPU share while it works
     watts_idle: float = 0.0        # W those parts draw when this engine is idle
@@ -123,7 +124,13 @@ def _clamp_args(p, args, schema):
         args[a["name"]] = c
 
 
+import contextvars
+
+_SPEC: contextvars.ContextVar = contextvars.ContextVar("spec")
+
+
 def derive(spec, machine_info) -> EnginePerf:
+    _SPEC.set(spec)
     eng = ENGINES.get(spec.engine)
     p = EnginePerf(engine_id=spec.id, kind="batch")
     if eng is None:
@@ -336,6 +343,14 @@ def _strata(p, args, model, gpus, cpu, info):
     bm = args.get("batch_mtp", False)
     batch_mtp = (bm is True or str(bm) == "on" or (str(bm) == "auto" and n_cards == 1)) and not pipelined and mtp
 
+    # KV streaming at a typical conversation depth (16K): what a slot re-reads over the link per window. The layout
+    # shows the full-context worst case separately.
+    typical_depth = min(ctx, 16384)
+    kv_streamed_gb = max(0.0, (typical_depth - kv_cells) * model["kv_kb_per_token"] / 2 / 1e6)
+    solo_rows_hint = 4 if (bool(args.get("mtp", True)) and model["mtp"]) else 1
+    if kv_cells < ctx:
+        p.notes.append(f"KV streaming: beyond {kv_cells // 1024}K tokens a slot's K/V lives in host RAM and crosses the link every window")
+
     def window_time(rows: int, drafts: bool) -> float:
         """Seconds for one verify window over all cards with `rows` rows."""
         t = 0.0
@@ -343,6 +358,10 @@ def _strata(p, args, model, gpus, cpu, info):
             t += (active_dense_gb / n_cards) / bw
             t += (active_expert_gb / n_cards) * rows * hit / bw
         t += active_expert_gb * rows * (1 - hit) / miss_bw
+        if kv_streamed_gb > 0:
+            # KV streaming: every window re-reads each slot's non-resident K/V over the link; this is what makes a
+            # 128K context fit in VRAM and also what caps its speed
+            t += kv_streamed_gb * max(1, rows // solo_rows_hint) / pcie_bw
         t += model["layers"] * STRATA_LAYER_MS / 1000 * (1 + 0.15 * (rows - 1))
         t += HANDOFF_MS / 1000 * (n_cards - 1)
         if drafts:
@@ -382,6 +401,13 @@ def _strata(p, args, model, gpus, cpu, info):
     p.window = ctx
     p.cache_convs = 1 + p.parking + (slots if slots > 1 else 0)
     p.memory = _memory_report(gpus, used)
+    try:
+        p.layout = layout_mod.strata_layout(spec=_SPEC.get(), args=args, model=model, gpus=gpus, cpu=cpu, info=info, dense_gb=dense_gb,
+                                            experts_gb=experts_gb, kv_gb_per_slot=kv_gb_per_slot, kv_cells=kv_cells, ctx=ctx, slots=slots,
+                                            trim=trim, cache_per_card=cache_per_card, held=held, hit=hit, decode_total=p.decode_total,
+                                            prefill_rate=p.prefill_rate, pcie_bw=pcie_bw)
+    except Exception as e:  # noqa: BLE001 - the layout is an aid; never break the derivation for it
+        p.notes.append(f"layout not available: {type(e).__name__}: {e}")
     p.memory["expert_cache_gb"] = round(cache_total, 1)
     p.memory["experts_total_gb"] = round(experts_gb, 1)
     p.memory["held"] = round(held, 2)

@@ -43,6 +43,7 @@ class PcieDevice:
     link_width: int = 16
     link_type: str = "pcie"              # pcie | tb3 | tb4 | usb4 | usb4v2 | tb5
     power_w: float | None = None         # GPU power cap in W; None = the card's default limit
+    display: bool = False                # a desktop / screen is attached to this GPU
     power_w: int | None = None           # GPU power cap in watts (None = the card's default limit)
     capacity_tb: float | None = None
 
@@ -85,11 +86,13 @@ class EngineSpec:
     cpu_cores: int = 4
     storage: str | None = None
     benchmarks: dict = field(default_factory=dict)
+    fixed: dict = field(default_factory=dict)       # overrides for the estimated fixed allocations (layout.FIXED_DEFAULTS)
 
     @classmethod
     def model_validate(cls, data: Any) -> "EngineSpec":
         e = _coerce(cls, data)
         e.args = dict(e.args or {})
+        e.fixed = dict(e.fixed or {})
         e.gpus = list(e.gpus or [])
         e.benchmarks = dict(e.benchmarks or {})
         return e

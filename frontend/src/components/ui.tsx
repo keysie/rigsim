@@ -11,13 +11,13 @@ export function Field({ label, children, hint }: { label: string; children: Reac
   );
 }
 
-export function Select<T extends string | number>({ value, onChange, options, disabled, ariaLabel }: {
+export function Select<T extends string | number>({ value, onChange, options, disabled, ariaLabel, className }: {
   value: T; onChange: (v: T) => void; options: { value: T; label: string; disabled?: boolean }[]; disabled?: boolean;
-  ariaLabel?: string;
+  ariaLabel?: string; className?: string;
 }) {
   const numeric = typeof value === "number";
   return (
-    <select value={String(value)} disabled={disabled} aria-label={ariaLabel}
+    <select className={className ?? "min-w-0"} value={String(value)} disabled={disabled} aria-label={ariaLabel}
             onChange={(e) => onChange((numeric ? Number(e.target.value) : e.target.value) as T)}>
       {options.map((o) => <option key={String(o.value)} value={String(o.value)} disabled={o.disabled}>{o.label}</option>)}
     </select>

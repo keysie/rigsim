@@ -31,10 +31,24 @@ def machine_validate(body):
 
 def engines_derive(body):
     info = validate(Machine.model_validate(body["machine"]))
-    out = {}
-    for e in body.get("engines", []):
-        spec = EngineSpec.model_validate(e)
-        out[spec.id] = derive(spec, info).public()
+    specs = [EngineSpec.model_validate(e) for e in body.get("engines", [])]
+    perfs = {s.id: derive(s, info) for s in specs}
+    # a second pass for Strata layouts: other engines' VRAM on the same card appears as a foreign box
+    for s in specs:
+        if s.engine != "strata" or perfs[s.id].errors:
+            continue
+        for gid in s.gpus:
+            foreign = 0.0
+            for o in specs:
+                if o.id == s.id or gid not in o.gpus:
+                    continue
+                m = perfs[o.id].memory.get(gid)
+                if isinstance(m, dict) and m.get("used_gb"):
+                    foreign += float(m["used_gb"])
+            if gid in info["_devices"]:
+                info["_devices"][gid]["_foreign_gb"] = foreign
+        perfs[s.id] = derive(s, info)
+    out = {s.id: perfs[s.id].public() for s in specs}
     return {"machine": {k: v for k, v in info.items() if not k.startswith("_")}, "engines": out}
 
 
