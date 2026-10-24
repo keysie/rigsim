@@ -1,0 +1,17 @@
+{
+ "id": "cat-svg",
+ "note": "pass 2 long task (user 2026-10-21): every answer repeats the whole growing SVG, so the context fills turn by turn",
+ "prompt": "Build me an animated SVG of a cat walking on a fence at night. Write the complete, self-contained SVG file in one code block: a night sky, a moon, a wooden fence along the bottom third, and a cat whose legs, tail and head move in a natural walking cycle while it crosses the fence from left to right and loops. Use SMIL or CSS animation inside the SVG only, and comment every part of the file.",
+ "followups": [
+  "Add a sky full of stars that twinkle at different rates and a slowly drifting cloud that passes in front of the moon. Give the complete file again.",
+  "Make the walk more natural: separate timing for front and back legs, a slight head bob, a tail that sways with its own rhythm. Give the complete file again.",
+  "Add a second row of fence posts further back that moves slower (parallax) and a lamp post with a flickering, warm glow. Give the complete file again.",
+  "Refactor: move every repeated shape into <defs> and reuse it with <use>, give every group a meaningful id, and explain each animation in a comment. Give the complete file again.",
+  "Add an owl on the lamp post that blinks every few seconds and turns its head towards the cat as it passes. Give the complete file again.",
+  "Let the cat stop in the middle of the fence, look up at the moon for a moment, then continue; make the whole scene loop seamlessly. Give the complete file again.",
+  "Review the whole file for errors (unclosed tags, broken references, animation timing gaps), list what you fix, then give the corrected complete file.",
+  "Add a gentle wind: grass tufts below the fence and the cat's fur at the tail tip move with it. Give the complete file again.",
+  "Add a shooting star that crosses the sky once per loop and the owl reacts to it. Give the complete file again.",
+  "Make the colour palette consistent (define it once as CSS variables or a style block) and adjust every element to use it. Give the complete file again."
+ ]
+}

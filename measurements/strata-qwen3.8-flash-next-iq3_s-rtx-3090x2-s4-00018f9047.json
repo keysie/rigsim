@@ -1,0 +1,82 @@
+{
+ "format": "rigsim-measurement/1",
+ "machine": {
+  "os": "linux",
+  "cpus": [
+   {
+    "cpu_id": "i9-10900x",
+    "enabled": true,
+    "ram_gb": 128,
+    "ram_mts": 3200,
+    "ram_channels": 4
+   }
+  ],
+  "devices": [
+   {
+    "id": "gpu-1",
+    "kind": "gpu",
+    "model_id": "rtx-3090",
+    "cpu": 0,
+    "link_gen": 3,
+    "link_width": 16
+   },
+   {
+    "id": "gpu-2",
+    "kind": "gpu",
+    "model_id": "rtx-3090",
+    "cpu": 0,
+    "link_gen": 3,
+    "link_width": 16
+   },
+   {
+    "id": "gpu-3",
+    "kind": "gpu",
+    "model_id": "rtx-3090",
+    "cpu": 0,
+    "link_gen": 3,
+    "link_width": 8
+   },
+   {
+    "id": "gpu-4",
+    "kind": "gpu",
+    "model_id": "rtx-3060-12g",
+    "cpu": 0,
+    "link_gen": 3,
+    "link_width": 4
+   }
+  ],
+  "nvlinks": []
+ },
+ "engine": {
+  "id": "maker",
+  "engine": "strata",
+  "version": "0.1.43.1",
+  "model_id": "qwen3.8-flash-next",
+  "args": {
+   "quantization": "iq3_s",
+   "batch": 4
+  },
+  "gpus": [
+   "gpu-1",
+   "gpu-2"
+  ],
+  "cpu": 0,
+  "cpu_cores": 9
+ },
+ "method": {
+  "tool": "bench/benchw.py tasks (pass 1)",
+  "engine_build": "0.1.43.1 hardened",
+  "runs": 3,
+  "streams": 4,
+  "context": 4096,
+  "power_limit_w": 250,
+  "driver": "615.71.09",
+  "date": "2026-10-21",
+  "submitter": "keysie"
+ },
+ "results": {
+  "decode_4": 175,
+  "prefill": 3300,
+  "hit": 0.99
+ }
+}

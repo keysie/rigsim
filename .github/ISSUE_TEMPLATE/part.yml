@@ -1,0 +1,32 @@
+name: Add a part to the catalog
+description: A CPU or GPU that is missing, with its public spec-sheet figures
+title: "[part] <vendor> <name>"
+labels: [part]
+body:
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind
+      options: [cpu, gpu]
+    validations:
+      required: true
+  - type: textarea
+    id: spec
+    attributes:
+      label: Spec
+      description: |
+        JSON with the catalog fields. CPU: id, name, vendor, year, cores, threads, mem_channels, max_mem_mts,
+        mem_type, pcie_gen, pcie_lanes, sockets, tdp_w, avx512, isa (sse|avx|avx2|avx512|amx), e_cores, all_core_ghz.
+        GPU: id, name, vendor, year, vram_gb, mem_bw_gbs, fp16_tflops, pcie_gen, pcie_lanes, nvlink_gbs, slots, tdp_w, form,
+        mem_bus_bits, mem_gbps (bus width and memory data rate; bandwidth must equal bus x rate / 8).
+        Source URL must be on nvidia.com, amd.com or intel.com and name the part.
+      render: json
+    validations:
+      required: true
+  - type: input
+    id: source
+    attributes:
+      label: Spec-sheet URL
+      description: the vendor page the figures come from
+    validations:
+      required: true

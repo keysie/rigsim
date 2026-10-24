@@ -1,0 +1,59 @@
+# Bench stage 2 — maker on Strata, 3090 #1 + #2 (agentic plan §9). Runs after stage 1 in ops/bench.yml.
+# Context above the pack's --max-context needs REINSTALL=1 (strata/README.md) and is NOT changed by the queue.
+# Rewritten 2026-10-20: sampling pinned in Strata's CONFIG (models.py render); effort "default" = nothing sent (xhigh).
+name = "stage2-maker"
+
+[defaults]
+repeats = 3
+timeout_s = 7200
+ready_timeout_s = 2400       # Strata waits for the guard's VRAM, then loads experts
+max_attempts = 2
+recreate = "always"
+
+[smoke]
+tasks = 1
+max_tokens = 1024
+timeout_s = 1200
+
+[guard]
+max_gpu_temp_c = 83
+cooldown_s = 300
+min_free_gb = 5
+
+[effort]
+key = "reasoning_effort"     # confirmed 2026-10-20: same template family; xhigh default, "high" mapped to xhigh
+[effort.prefix]
+low = "Reasoning effort is set to low. Keep your thinking brief and focused, moving directly to the conclusion without unnecessary elaboration."   # verbatim, served template (inspect-engines 2026-10-20)
+
+[sampling.engine]            # send nothing: Strata's CONFIG sampling (= the card)
+
+[[variant]]
+id = "maker-b4"              # production: --batch 4, 32K
+service = "strata"
+
+[[variant]]
+id = "maker-b2"              # fewer slots, more expert cache per slot
+service = "strata"
+strata_args_set = { "--batch" = "2" }
+
+[[workload]]
+id = "effort"
+kind = "tasks"
+tasks = "tasks/seed.jsonl"
+effort = ["template:low", "template:medium", "default"]
+streams = 2
+max_tokens = 8192
+
+[[workload]]
+id = "loop"                  # context high-water at 32K, with and without reasoning replay
+kind = "multiturn"
+tasks = "tasks/seed.jsonl"
+variants = ["maker-b4"]
+effort = ["template:low", "template:medium"]
+replay_reasoning = [false, true]
+max_tokens = 8192
+
+[[workload]]
+id = "tps"
+kind = "throughput"
+streams = "1,2,4"

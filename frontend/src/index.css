@@ -1,0 +1,27 @@
+@import "@fontsource/ibm-plex-sans/400.css";
+@import "@fontsource/ibm-plex-sans/500.css";
+@import "@fontsource/ibm-plex-sans/600.css";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color-scheme: light; }
+html { background: #F3F5F4; }
+body { @apply bg-paper text-ink font-sans antialiased; font-size: 15px; }
+h1 { @apply text-2xl font-semibold tracking-tight; }
+h2 { @apply text-lg font-semibold; }
+label { @apply text-sm text-muted; }
+select, input[type="number"], input[type="text"] {
+  @apply bg-panel border border-line rounded px-2 py-1 text-sm text-ink;
+}
+select:focus-visible, input:focus-visible, button:focus-visible { @apply outline-none ring-2 ring-mask; }
+.btn { @apply inline-flex items-center gap-1 rounded border border-line bg-panel px-3 py-1.5 text-sm hover:border-mask; }
+.btn-primary { @apply bg-mask text-white border-mask hover:bg-mask-deep; }
+.btn-quiet { @apply text-muted hover:text-ink border-transparent; }
+.chip { @apply inline-block rounded px-1.5 py-0.5 text-xs; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+.board {
+  background-image: linear-gradient(to right, rgba(31,107,91,.06) 1px, transparent 1px),
+                    linear-gradient(to bottom, rgba(31,107,91,.06) 1px, transparent 1px);
+  background-size: 24px 24px;
+}

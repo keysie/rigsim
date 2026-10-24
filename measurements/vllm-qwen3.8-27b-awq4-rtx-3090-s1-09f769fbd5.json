@@ -1,0 +1,82 @@
+{
+ "format": "rigsim-measurement/1",
+ "machine": {
+  "os": "linux",
+  "cpus": [
+   {
+    "cpu_id": "i9-10900x",
+    "enabled": true,
+    "ram_gb": 128,
+    "ram_mts": 3200,
+    "ram_channels": 4
+   }
+  ],
+  "devices": [
+   {
+    "id": "gpu-1",
+    "kind": "gpu",
+    "model_id": "rtx-3090",
+    "cpu": 0,
+    "link_gen": 3,
+    "link_width": 16
+   },
+   {
+    "id": "gpu-2",
+    "kind": "gpu",
+    "model_id": "rtx-3090",
+    "cpu": 0,
+    "link_gen": 3,
+    "link_width": 16
+   },
+   {
+    "id": "gpu-3",
+    "kind": "gpu",
+    "model_id": "rtx-3090",
+    "cpu": 0,
+    "link_gen": 3,
+    "link_width": 8
+   },
+   {
+    "id": "gpu-4",
+    "kind": "gpu",
+    "model_id": "rtx-3060-12g",
+    "cpu": 0,
+    "link_gen": 3,
+    "link_width": 4
+   }
+  ],
+  "nvlinks": []
+ },
+ "engine": {
+  "id": "sub",
+  "engine": "vllm",
+  "version": "0.31.0",
+  "model_id": "qwen3.8-27b",
+  "args": {
+   "tensor_parallel": "1",
+   "max_num_seqs": 4,
+   "quantization": "awq4"
+  },
+  "gpus": [
+   "gpu-3"
+  ],
+  "cpu": 0,
+  "cpu_cores": 2
+ },
+ "method": {
+  "tool": "bench/benchw.py tasks (pass 1)",
+  "engine_build": "vLLM 0.31.0",
+  "runs": 3,
+  "streams": 1,
+  "context": 8192,
+  "power_limit_w": 250,
+  "driver": "615.71.09",
+  "date": "2026-10-21",
+  "submitter": "keysie"
+ },
+ "results": {
+  "decode_1": 39,
+  "prefill": 1050,
+  "kv_room_tokens": 21000
+ }
+}

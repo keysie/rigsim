@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "rigsim measurement record",
+  "type": "object",
+  "required": ["format", "machine", "engine", "method", "results"],
+  "properties": {
+    "format": { "const": "rigsim-measurement/1" },
+    "machine": { "type": "object", "description": "the simulator's machine JSON: os, cpus[], devices[], nvlinks[]",
+      "required": ["cpus", "devices"] },
+    "engine": { "type": "object", "description": "the simulator's engine JSON: engine, version, model_id, args, gpus, cpu, cpu_cores",
+      "required": ["engine", "version", "model_id", "gpus"] },
+    "method": { "type": "object",
+      "required": ["tool", "runs", "streams", "context", "date"],
+      "properties": {
+        "tool": { "type": "string", "description": "e.g. bench/benchw.py tasks, llama-bench b4011, vllm benchmark_serving" },
+        "engine_build": { "type": "string" },
+        "runs": { "type": "integer", "minimum": 1 },
+        "streams": { "type": "integer", "minimum": 1, "description": "concurrent requests during the run" },
+        "context": { "type": "integer", "description": "prompt length in tokens the writing speed was taken at" },
+        "power_limit_w": { "type": "number" },
+        "driver": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "submitter": { "type": "string", "description": "an alias, never a name or address" },
+        "raw_sha256": { "type": "string", "description": "sha256 of the raw result file, for later audit" },
+        "notes": { "type": "string" }
+      } },
+    "results": { "type": "object", "description": "medians; decode_N = total tok/s with N streams",
+      "properties": {
+        "decode_1": { "type": "number" }, "decode_2": { "type": "number" }, "decode_3": { "type": "number" },
+        "decode_4": { "type": "number" }, "decode_6": { "type": "number" }, "decode_8": { "type": "number" },
+        "prefill": { "type": "number" }, "kv_room_tokens": { "type": "number" }, "hit": { "type": "number", "minimum": 0, "maximum": 1 }
+      }, "additionalProperties": false }
+  }
+}

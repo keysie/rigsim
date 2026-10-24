@@ -1,0 +1,65 @@
+# Validates a measurement or part submitted through the issue forms and opens a pull request with the file.
+name: intake
+on:
+  issues:
+    types: [opened, edited]
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+jobs:
+  intake:
+    if: contains(github.event.issue.labels.*.name, 'measurement') || contains(github.event.issue.labels.*.name, 'part')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: Save the issue body
+        env: { BODY: "${{ github.event.issue.body }}" }
+        run: printf '%s' "$BODY" > issue.md
+      - name: Submitter gate (account age or merged history)
+        id: gate
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const u = context.payload.issue.user;
+            const user = await github.rest.users.getByUsername({ username: u.login });
+            const ageDays = (Date.now() - new Date(user.data.created_at)) / 86400000;
+            const merged = await github.rest.search.issuesAndPullRequests({ q: `is:pr is:merged author:${u.login} repo:${context.repo.owner}/${context.repo.repo}` });
+            const trusted = ageDays >= 30 || merged.data.total_count > 0 || u.login === context.repo.owner;
+            core.setOutput('trusted', trusted ? 'true' : 'false');
+            if (!trusted) await github.rest.issues.addLabels({ ...context.repo, issue_number: context.issue.number, labels: ['needs-review'] });
+      - name: Validate and write the file
+        id: intake
+        continue-on-error: true
+        env: { INTAKE_FETCH: "1" }
+        run: |
+          kind=$([[ "${{ contains(github.event.issue.labels.*.name, 'measurement') }}" == "true" ]] && echo measurement || echo part)
+          echo "kind=$kind" >> "$GITHUB_OUTPUT"
+          python3 scripts/intake.py "$kind" issue.md
+      - name: Run the test suite on the result
+        if: steps.intake.outcome == 'success'
+        run: pip install fastapi "uvicorn[standard]" pytest httpx
+      - run: pip install httpx2 || true   # newest starlette needs it for TestClient; older warns
+      - run: cd backend && python -m pytest -q
+      - name: Report back
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let body = fs.existsSync('intake-report.md') ? fs.readFileSync('intake-report.md', 'utf8') : 'The intake script failed; a maintainer will look.';
+            if ('${{ steps.gate.outputs.trusted }}' !== 'true') body += '\n\nYour account is new to this repository, so a maintainer will open the pull request after a look (label `needs-review`).';
+            await github.rest.issues.createComment({ ...context.repo, issue_number: context.issue.number, body });
+      - name: Open a pull request
+        if: steps.intake.outcome == 'success' && steps.gate.outputs.trusted == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: intake/issue-${{ github.event.issue.number }}
+          title: "${{ steps.intake.outputs.kind }}: ${{ github.event.issue.title }}"
+          commit-message: "${{ steps.intake.outputs.kind }} from #${{ github.event.issue.number }}"
+          body: "Submitted in #${{ github.event.issue.number }}. Closes #${{ github.event.issue.number }}."
+          delete-branch: true
+          add-paths: |
+            measurements/*.json
+            backend/app/catalog/proposed.json

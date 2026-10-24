@@ -1,0 +1,27 @@
+name: Submit a measurement
+description: A measurement record exported from the app (Export measurement on the engine card)
+title: "[measurement] <engine> · <model> · <GPU>"
+labels: [measurement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Paste the JSON the app downloaded. It is validated automatically; if it passes, a pull request is opened
+        for you and this issue is closed when it merges. Keep names, addresses and links out of the record.
+  - type: textarea
+    id: record
+    attributes:
+      label: Record
+      description: the content of the downloaded .json file
+      render: json
+    validations:
+      required: true
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Confirmation
+      options:
+        - label: I measured this myself on the hardware described, with the engine alone on its cards
+          required: true
+        - label: I contribute the record under the repository's Apache 2.0 license
+          required: true

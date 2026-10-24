@@ -1,0 +1,6 @@
+maker.json and sub.json contain text and tool schemas from Turnstone v1.8.5 (https://github.com/turnstonelabs/turnstone),
+Copyright the Turnstone authors, licensed under the Apache License, Version 2.0
+(http://www.apache.org/licenses/LICENSE-2.0): the system prompt modules (prompts/personas/engineer.md, prompts/env/web.md,
+prompts/tools.md, the context block), the task-agent identity, operating guidance and skill preamble
+(turnstone/core/session.py) and the tool definitions (turnstone/tools/*.json as loaded by turnstone/core/tools.py).
+They were extracted unmodified by make_shape.py (the skills appended to them are this repository's, infra/seed/skills).

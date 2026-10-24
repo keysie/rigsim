@@ -1,0 +1,5 @@
+# Benchmark pass 6 — the configurations chosen after pass 1 (fill in together, then run gen_phase6.py and commit).
+# Ids are pass-1 variant ids (infra/bench/plans/p1-*.toml). Placeholders keep pass 6 ungenerated.
+maker = ["FILL"]            # 2–3 Strata variants on #1+#2 (maker-*); a maker3gpu-* id goes to the exclusive group
+sub = ["FILL"]              # 2–3 sub-maker variants (subA-* or subB-*; subB ids without the -g0/-g1 suffix) — on #3
+extras = true               # the deferred variants (docs/bench-plan.md "Deferred"), screened like pass 1

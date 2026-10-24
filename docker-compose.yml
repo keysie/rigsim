@@ -1,0 +1,7 @@
+services:
+  simulator:
+    build: .
+    image: rigsim:latest
+    ports:
+      - "8080:80"
+    restart: unless-stopped

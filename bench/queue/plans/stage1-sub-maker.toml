@@ -1,0 +1,90 @@
+# Bench stage 1 — sub-maker on 3090 #3 (agentic plan §9). Run unattended with the whole sequence:
+#   run-stages.sh [--smoke] plans/stage1-*.toml   (stop the agent harness first; restore your services after)
+# By hand on the box: benchq.py plan|run|status|report <this file> [--smoke]
+# Rewritten 2026-10-20: sampling is pinned at the engine from infra/models (no sampling workload any more — clients
+# send nothing, like Turnstone); effort "default" = nothing sent = the template's xhigh (not medium).
+name = "stage1-sub-maker"
+
+[defaults]
+repeats = 3                 # per task; 3 is enough to see spread, raise for the final comparison
+timeout_s = 5400            # per queue item (all tasks x repeats)
+ready_timeout_s = 1800      # model load
+max_attempts = 2
+recreate = "always"         # every variant starts cold -> comparable
+
+[smoke]                     # benchq.py --smoke / bench_smoke=true: first knob value, 1 task, 1 repeat
+tasks = 1
+max_tokens = 1024
+timeout_s = 900
+
+[guard]
+max_gpu_temp_c = 83         # core temperature; GDDR6X is not visible to nvidia-smi on these cards
+cooldown_s = 300
+min_free_gb = 5
+
+[effort]
+key = "reasoning_effort"    # confirmed 2026-10-20: levels xhigh (template default!), medium, low — "high" raises on the 27B
+[effort.prefix]
+low = "Reasoning effort is set to low. Keep your thinking brief and focused, moving directly to the conclusion without unnecessary elaboration."   # verbatim, served template (inspect-engines 2026-10-20)
+
+[sampling.engine]           # send nothing: the engine's pinned values (models.py render) — what Turnstone gets
+
+# ---------------------------------------------------------------- variants (one engine config each)
+[[variant]]
+id = "sub-awq"                       # baseline: avyukth AWQ, production compose (sampling pinned, prompt token details)
+service = "vllm-sub"
+
+[[variant]]
+id = "sub-swift-awq"                 # Swift 1.5 AWQ (V7) — skipped with a reason until the gated download (HF1)
+service = "vllm-sub"
+model = "ukisai/Swift-1.5-Qwen3.8-27b-W4A16-AWQ"
+
+[[variant]]
+id = "sub-awq-mtp"                   # MTP on (open V5)
+service = "vllm-sub"
+args_add = ['--speculative-config={"method":"mtp","num_speculative_tokens":3}']
+
+# ---------------------------------------------------------------- workloads
+[[workload]]
+id = "effort"                        # EF1: low (production) vs medium vs nothing sent, at Turnstone's 8K answer budget
+kind = "tasks"
+tasks = "tasks/seed.jsonl"
+variants = ["sub-awq", "sub-swift-awq"]
+effort = ["template:low", "template:medium", "default"]
+streams = 3
+max_tokens = 8192
+
+[[workload]]
+id = "budget16k"                     # does the 8K budget cut answers? same levels at 16K
+kind = "tasks"
+tasks = "tasks/seed.jsonl"
+variants = ["sub-awq"]
+effort = ["template:low", "template:medium"]
+streams = 3
+max_tokens = 16384
+
+[[workload]]
+id = "brief"                         # low via the maker's brief (prefix) instead of the template kwarg
+kind = "tasks"
+tasks = "tasks/seed.jsonl"
+variants = ["sub-awq"]
+effort = ["prefix:low"]
+streams = 3
+max_tokens = 8192
+
+[[workload]]
+id = "loop"                          # context high-water and prefix-cache hits, reasoning replayed or not
+kind = "multiturn"
+tasks = "tasks/seed.jsonl"
+variants = ["sub-awq", "sub-swift-awq"]
+effort = ["template:low", "template:medium"]
+replay_reasoning = [false, true]
+max_tokens = 8192
+
+[[workload]]
+id = "tps"                           # raw throughput
+kind = "throughput"
+variants = ["sub-*"]
+streams = "1,2,3,4"
+prompt_tokens = 2000
+max_tokens = 512

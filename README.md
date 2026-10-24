@@ -1,0 +1,148 @@
+# rigsim
+
+Simulate an LLM inference host before you buy it: GPUs, PCIe, engines, agent workloads.
+
+> **Read this first.** This is a vibe-coded side project: the code, the performance model and these pages were
+> written by an AI assistant in chat sessions, on the direction of one person, over a few days. It is not a
+> product and not a research result. Nobody has reviewed the model line by line. It was calibrated on **one
+> machine** plus a handful of public benchmark reports and reaches roughly **±25 %** on held-out points from
+> similar hardware; outside that path it can be off by a factor. Use it to reason about *relative* choices
+> and to see which measurement would settle a question. **Do not base a purchase or a design decision on it
+> without measuring.** How it was calibrated and validated is spelled out [below](#how-it-was-calibrated-and-validated)
+> and on the app's *Calibration data* page.
+
+A planner for machines that serve local language models to an agent system. Compose a computer (CPUs,
+memory, PCIe links, SSDs, GPUs), place inference engines on it, assign them to the roles of a
+[Turnstone](https://github.com/turnstonelabs/turnstone)-style agent setup, run a simulated workload and see
+what stalls: a saturated card, a serial admission queue, a judge on the critical path, re-read prompts, a tool
+search on the CPU.
+
+Everything runs in your browser (Python on [Pyodide](https://pyodide.org) in a web worker). The site is static:
+no server, no accounts, nothing is sent anywhere. Configurations can be saved and loaded as JSON files.
+
+![Machine page](docs/img/machine.png)
+
+## What it does
+
+1. **Machine** — one or two CPUs from a catalog of ~50 parts (2011–2026) with vector ISA, core mix, memory
+   channels and lanes; a memory pool per socket; SSDs on one side, GPUs on the other, every PCIe link with its
+   own generation and width — or an external Thunderbolt 3/4/5 or USB4 link for eGPU enclosures, which caps
+   bandwidth and costs 4 CPU lanes only when the CPU has no integrated port (pre-2022, non-SoC: a
+   controller card); NVLink bridges between adjacent identical GPUs; an operating-system
+   switch. A **prebuilt systems** dropdown fills the page with a DGX Spark, Mac Studio M4 Max / M3 Ultra,
+   Mac Pro M2 Ultra, Framework Desktop (Strix Halo) or a typical desktop; everything stays editable, so a
+   Spark with an eGPU on its TB4 port is two clicks. Unified-memory machines model the iGPU as sharing the
+   pool's bandwidth. The lane budget and all bandwidths update with every change.
+2. **Engines** — one model per engine. Strata, vLLM, llama.cpp and a hosted API, with versions that define the
+   arguments. Assign GPUs, a CPU, cores and a model SSD. Beside each engine: prompt-reading rate, writing rate
+   alone and with several requests, expert-cache hit, KV room, VRAM per card, and why something does not fit.
+   Measured values can be entered and override the derived ones.
+3. **Roles & simulate** — coordinator, maker, sub-makers, output guard, judge, reranker. A workload described
+   as ranges, sampled per scenario. One button runs every concurrency level and shows tasks per hour as
+   percentile bands, utilisation per engine and GPU, hosted cost, call rates, and a ranked list of what
+   limits throughput.
+4. **Live run** — one scenario replayed at 10–1000×: a log of every request and gauges per engine, GPU, PCIe
+   link, CPU cores and memory bandwidth.
+5. **Calibration data** — every measured point the model was fitted to or checked against, with sources, and
+   claims from unmethodical pages checked against the simulator.
+6. **How to measure** — taking the numbers the model wants, with snippets and the scripts in `bench/`.
+
+![Simulation results](docs/img/results.png)
+
+## How it was calibrated and validated
+
+The performance model (`backend/app/perf.py`) is bandwidth-centred: writing a token reads the weights it
+touches once per step, from VRAM, host RAM through the CPU, or PCIe; reading a prompt is compute-bound plus
+the streaming of non-resident experts plus the attention products, which grow with context; parallel
+requests share dense weights but hardly share experts. About a dozen constants (bandwidth efficiency, per-layer
+overhead, expert-cache hit skew, per-core expert rate by vector ISA, PCIe small-copy efficiency, an
+architecture factor for Pascal/Turing, an OS factor) were **hand-fitted** to twelve measured points:
+
+- nine from one machine (Core i9-10900X, 4-channel DDR4-3200, three RTX 3090 and one RTX 3060, Linux): Strata
+  on one and two cards, vLLM and llama.cpp with a 27B model, a 3B guard, a reranker on the CPU;
+- three from Strata community reports with documented hardware (RTX 3060 + i7-12700, RTX 4090 + 7950X,
+  RTX 2080 Ti + Threadripper 3960X).
+
+Twenty-four further points were **held out**: more cells from the same machine, Strata reports for RTX 5090,
+2 × TITAN RTX and 2 × RTX 4000 Ada, and the llama.cpp CUDA table with build numbers (Llama 3.1 8B, Qwen2.5-32B
+on 3090 / 4090). Result: 12 of 12 calibration points and 20 of 24 held-out points within ±30 %, median error
+10 % and 19 %, worst held-out miss +35 %. `backend/tests/test_validation.py` keeps the model inside those
+bounds; the *Calibration data* page recomputes the whole table from the current code.
+
+What this does **not** cover: models other than the ones in the catalog (sizes are spec-sheet figures and
+parameter counts, not measurements), GPUs the reports did not include (spec-sheet bandwidth with the same
+efficiency constants), two engines sharing a card (VRAM and utilisation are summed, neither is slowed),
+chipset lanes and slot spacing, thermals and power limits, answer quality. The workload ranges on the roles
+page are assumptions until real traces replace them. See `docs/predictions/` for numbers written down before
+a benchmark pass, to be scored against it.
+
+## Run it
+
+**Hosted static site** — any static host works; the build is a folder of files (about 14 MB with the Pyodide
+runtime). Build command `cd frontend && npm ci && npm run build`, output directory `frontend/dist`.
+
+- GitHub Pages: enable Pages with source "GitHub Actions"; `.github/workflows/pages.yml` builds, tests and
+  deploys on every push to `main`. `ci.yml` runs the tests on pull requests; `intake.yml` handles the issue forms.
+- Cloudflare Pages: connect the repo, set the build command and output directory above.
+- Hugging Face static Space: upload `frontend/dist`.
+
+**Locally**
+
+```
+cd frontend && npm ci && npm run build && npx serve dist        # or any static file server
+docker compose up --build                                       # nginx serving the same files on :8080
+```
+
+**Development**
+
+```
+cd backend && pip install fastapi "uvicorn[standard]" pytest httpx
+uvicorn app.main:app --port 8080            # optional dev server with the same functions behind HTTP
+cd frontend && npm run dev                  # Vite dev server; runs Python in the browser by default
+VITE_API_BASE=http://127.0.0.1:8080 npm run dev   # ...or against the dev server
+```
+
+Tests: `cd backend && python -m pytest -q` (machine rules, calibration bounds, API; 20) and
+`cd frontend && VITE_API_BASE=http://127.0.0.1:8080 npm test` (user flows in a DOM against the dev server; 14).
+
+## Layout
+
+```
+backend/app/catalog/   CPUs, GPUs, SSDs, models, engines with per-version argument schemas
+backend/app/machine.py validation, link and memory bandwidths, CPU expert rate
+backend/app/perf.py    engine budgets from hardware, model and arguments
+backend/app/sim/       event-driven fluid simulation, engine models, Turnstone-shaped workload, bottlenecks
+backend/app/calibration.py   the measured points, sources and checked claims (Calibration page)
+backend/app/api.py     function-level API used by the browser build; main.py wraps it for the dev server
+frontend/src/          React + TypeScript + Tailwind; py.worker.ts runs the Python in a web worker
+bench/                 the measurement scripts (standalone) and the unattended queue (reference)
+docs/predictions/      predictions written before benchmark passes, for scoring
+```
+
+## Contributing measurements
+
+Measured points are the most useful contribution, and there is a fixed path for them:
+
+1. Measure (`bench/README.md`), enter the numbers in the engine's *Measured on real hardware* block.
+2. Click **Export measurement**, fill the short method form (tool, runs, streams, context, power limit,
+   driver, date, an alias). The app validates the record: parts must exist in the catalogs, numbers must
+   stay inside physical bounds, free text must carry no names or links.
+3. Open the **Submit a measurement** issue form and paste the file's content. An Action validates it, posts
+   the result as a comment, and opens a pull request with the file; the maintainer only merges. A pull request
+   adding the file to `measurements/` directly works too. Missing CPU or GPU? The **Add a part** form takes the
+   spec-sheet figures and a source URL. Parts are checked for internal consistency (bandwidth = bus × rate,
+   sizes that exist, per-year envelopes, ISA by vendor and year), the source must be a page on the vendor's
+   own domain (nvidia.com, amd.com, intel.com) that names the part, and accepted parts land in quarantine (`catalog/proposed.json`): usable in the
+   app, tagged "community, unverified", never used for calibration until a maintainer promotes them. New
+   accounts get a `needs-review` label instead of an automatic pull request.
+
+Records are shipped with the site and clustered by GPUs, engine, model, quant and streams. On any engine card
+whose configuration matches a cluster, the app offers the cluster's median as a one-click measured value with
+count, spread and a trust score; the Calibration page lists the clusters with the model's error. Records never
+move the model's constants by themselves — that is a separate, deliberate refit against the calibration set.
+Format: `measurements/schema.json`. New parts for the catalogs need a public spec sheet. Model
+changes should keep `backend/tests/test_validation.py` green or explain why the bounds move.
+
+## License
+
+Apache License 2.0 — see `LICENSE` and `NOTICE`. Contributors in `CONTRIBUTORS.md`.

@@ -1,0 +1,46 @@
+name: ci
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+  checks: write
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: frontend/package-lock.json }
+      - run: |
+          pip install fastapi "uvicorn[standard]" pytest httpx
+          pip install httpx2 || true   # newest starlette needs it for TestClient; older warns
+      - name: Backend tests
+        id: pytest
+        shell: bash
+        run: |
+          set -o pipefail
+          cd backend
+          python -m pytest -q 2>&1 | tee /tmp/pytest.out || echo "failed=1" >> "$GITHUB_OUTPUT"
+      - name: Publish test output as a check run
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let text = '';
+            try { text = fs.readFileSync('/tmp/pytest.out', 'utf8'); } catch { text = '(no output captured)'; }
+            await github.rest.checks.create({ ...context.repo, name: 'ci-debug', head_sha: context.sha,
+              status: 'completed', conclusion: 'neutral',
+              output: { title: 'backend pytest output', summary: 'tail below', text: text.slice(-60000) } });
+      - name: Fail if the backend tests failed
+        if: steps.pytest.outputs.failed == '1'
+        run: exit 1
+      - run: cd frontend && npm ci && npm run build
+      - name: UI tests against the dev server
+        run: |
+          cd backend && (PYTHONPATH=. uvicorn app.main:app --port 8080 &) && sleep 3
+          cd ../frontend && VITE_API_BASE=http://127.0.0.1:8080 npm test
