@@ -56,6 +56,9 @@ CPUS = [
     ("apple-m4-max", "Apple M4 Max", "Apple", 2024, 16, 16, 8, 8533, "LPDDR5X", 4, 8, 1, 90, False, "neon", 4, 4.0),
     ("apple-m3-ultra", "Apple M3 Ultra", "Apple", 2025, 32, 32, 8, 8533, "LPDDR5X", 4, 16, 1, 270, False, "neon", 8, 3.8),
     ("apple-m2-ultra", "Apple M2 Ultra (Mac Pro)", "Apple", 2023, 24, 24, 8, 6400, "LPDDR5", 4, 16, 1, 295, False, "neon", 8, 3.5),
+    ("apple-m1-ultra", "Apple M1 Ultra", "Apple", 2022, 20, 20, 8, 6400, "LPDDR5", 4, 16, 1, 215, False, "neon", 4, 3.2),
+    ("apple-m5-max", "Apple M5 Max", "Apple", 2026, 18, 18, 8, 8533, "LPDDR5X", 5, 8, 1, 100, False, "neon", 0, 4.2),
+    ("apple-m5-ultra", "Apple M5 Ultra", "Apple", 2026, 36, 36, 8, 8533, "LPDDR5X", 5, 16, 1, 300, False, "neon", 0, 4.0),
     ("amd-ai-max-395", "Ryzen AI Max+ 395 (Strix Halo)", "AMD", 2025, 16, 32, 8, 8000, "LPDDR5X", 4, 16, 1, 120, True, "avx512", 0, 4.5),
     ("epyc-9575f", "EPYC 9575F", "AMD", 2024, 64, 128, 12, 6000, "DDR5", 5, 128, 2, 400, True, "avx512", 0, 4.5),
 ]
@@ -71,9 +74,11 @@ OS_FACTOR = {"linux": 1.0, "windows": 0.7}   # Windows: WDDM and non-pinned host
 CPU_BY_ID = {row[0]: dict(zip(FIELDS, row)) for row in CPUS}
 
 # unified-memory parts: the pool bandwidth is a property of the package, not of DIMM slots
-SOC_RAM_BW = {"gb10": 273, "apple-m4-max": 546, "apple-m3-ultra": 819, "apple-m2-ultra": 800, "amd-ai-max-395": 256}
+SOC_RAM_BW = {"gb10": 273, "apple-m4-max": 546, "apple-m3-ultra": 819, "apple-m2-ultra": 800, "apple-m1-ultra": 800,
+              "apple-m5-max": 614, "apple-m5-ultra": 1228, "amd-ai-max-395": 256}
 SOC_RAM_GB = {"gb10": [128], "apple-m4-max": [36, 48, 64, 128], "apple-m3-ultra": [96, 192, 256, 512],
-              "apple-m2-ultra": [64, 128, 192], "amd-ai-max-395": [32, 64, 128]}
+              "apple-m2-ultra": [64, 128, 192], "apple-m1-ultra": [64, 128], "apple-m5-max": [48, 64, 128],
+              "apple-m5-ultra": [96, 256, 512], "amd-ai-max-395": [32, 64, 128]}
 
 RAM_SPEEDS = {"DDR3": [1333, 1600, 1866, 2133], "DDR4": [2133, 2400, 2666, 2933, 3200, 3600, 4000],
               "LPDDR5": [5500, 6400], "LPDDR5X": [7500, 8000, 8533], "DDR5": [4800, 5200, 5600, 6000, 6400, 7200, 8000]}

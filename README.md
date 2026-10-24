@@ -61,17 +61,25 @@ architecture factor for Pascal/Turing, an OS factor) were **hand-fitted** to twe
 - nine from one machine (Core i9-10900X, 4-channel DDR4-3200, three RTX 3090 and one RTX 3060, Linux): Strata
   on one and two cards, vLLM and llama.cpp with a 27B model, a 3B guard, a reranker on the CPU;
 - three from Strata community reports with documented hardware (RTX 3060 + i7-12700, RTX 4090 + 7950X,
-  RTX 2080 Ti + Threadripper 3960X).
+  RTX 2080 Ti + Threadripper 3960X);
+- five for the unified-memory prebuilts, from the llama.cpp maintainers' own tables: M2 Ultra writing in F16
+  and Q4_0 (which fix Metal's bandwidth efficiency per weight format), M5 Max (the tensor-unit generation),
+  Strix Halo (RDNA on LPDDR5X) and the DGX Spark (gpt-oss-120b on the GB10). Each sets one architecture
+  factor; everything else on those platforms is held out.
 
-Twenty-four further points were **held out**: more cells from the same machine, Strata reports for RTX 5090,
-2 × TITAN RTX and 2 × RTX 4000 Ada, and the llama.cpp CUDA table with build numbers (Llama 3.1 8B, Qwen2.5-32B
-on 3090 / 4090). Result: 12 of 12 calibration points and 20 of 24 held-out points within ±30 %, median error
-10 % and 19 %, worst held-out miss +35 %. `backend/tests/test_validation.py` keeps the model inside those
+Forty-one further points were **held out**: more cells from the same machine, Strata reports for RTX 5090,
+2 × TITAN RTX and 2 × RTX 4000 Ada, the llama.cpp CUDA table with build numbers (Llama 3.1 8B, Qwen2.5-32B
+on 3090 / 4090), and across the prebuilts: M1 Ultra, M3 Ultra, M4 Max, M5 Max and M5 Ultra in other
+formats and in prompt processing (llama.cpp discussion #4167), Strix Halo prompt processing and a 27B dense
+model with and without MTP plus the RX 7900 XTX (ROCm scoreboard #15021), and the Spark's prompt rate
+(#16578). Result: 17 of 17 calibration points and 37 of 41 held-out points within ±30 %, median error
+8 % and 14 %, worst held-out miss ±35 %. `backend/tests/test_validation.py` keeps the model inside those
 bounds; the *Calibration data* page recomputes the whole table from the current code.
 
 What this does **not** cover: models other than the ones in the catalog (sizes are spec-sheet figures and
 parameter counts, not measurements), GPUs the reports did not include (spec-sheet bandwidth with the same
-efficiency constants), two engines sharing a card (VRAM and utilisation are summed, neither is slowed),
+efficiency constants), Strata on unified memory (no public measurement exists; the CPU expert path on NEON
+is a guess), two engines sharing a card (VRAM and utilisation are summed, neither is slowed),
 chipset lanes and slot spacing, thermals and power limits, answer quality. The workload ranges on the roles
 page are assumptions until real traces replace them. See `docs/predictions/` for numbers written down before
 a benchmark pass, to be scored against it.

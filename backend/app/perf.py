@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from .catalog.gpus import kernel_efficiency
+from .catalog.gpus import compute_efficiency, kernel_efficiency, layer_overhead_factor
 from .catalog.models import ENGINES, MODEL_BY_ID, QUANTS
 
 GPU_BW_EFF = 0.75          # share of spec bandwidth a decode kernel achieves (27B AWQ on a 3090: 39 tok/s; 8B Q4_0: 167)
@@ -354,12 +354,16 @@ def _flops_eff(model):
     return min(0.78, GPU_FLOPS_EFF * (1 + 8 / max(1.0, model["active_b"])) ** 0.5)
 
 
-def _gpu_bw(g):
-    return g["spec"]["mem_bw_gbs"] * GPU_BW_EFF * kernel_efficiency(g["spec"])
+def _gpu_bw(g, bpw: float = 4.5):
+    return g["spec"]["mem_bw_gbs"] * GPU_BW_EFF * kernel_efficiency(g["spec"], bpw)
 
 
 def _gpu_flops(g):
-    return g["spec"]["fp16_tflops"] * 1e12 * kernel_efficiency(g["spec"])
+    return g["spec"]["fp16_tflops"] * 1e12 * compute_efficiency(g["spec"])
+
+
+def _layer_ms(gpus):
+    return LAYER_OVERHEAD_MS * (max(layer_overhead_factor(g["spec"]) for g in gpus) if gpus else 1.0)
 
 
 def _dense_bytes_gb(model, bpw):
@@ -388,7 +392,7 @@ def _vllm(p, args, model, gpus, cpu, info):
     conc_by_kv = max(1, int(kv_tokens / (ctx * 0.6)))          # requests rarely sit at full context
     conc = min(int(args["max_num_seqs"]), conc_by_kv)
     nvl = _nvlinked(gpus, info)
-    bw = sum(_gpu_bw(g) for g in gpus) * (1.0 if tp == 1 else (0.92 if nvl else 0.78))
+    bw = sum(_gpu_bw(g, bpw) for g in gpus) * (1.0 if tp == 1 else (0.92 if nvl else 0.78))
     flops = sum(_gpu_flops(g) for g in gpus) * _flops_eff(model) * (0.7 if bpw < 8 else 1.0)   # dequant costs prefill
     active_gb = model["active_b"] * bpw / 8 if model["experts"] else weights_gb
     expert_gb = max(0.0, model["active_b"] - model["params_b"] * (1 - model["expert_share"])) * bpw / 8
@@ -399,7 +403,7 @@ def _vllm(p, args, model, gpus, cpu, info):
             break
         kv_read = n * min(ctx, 8192) * kv_bytes / 1e9       # typical filled context, not the window
         shared = active_gb - expert_gb
-        t = (shared + expert_gb * n + kv_read) / bw + model["layers"] * LAYER_OVERHEAD_MS / 1000
+        t = (shared + expert_gb * n + kv_read) / bw + model["layers"] * _layer_ms(gpus) / 1000
         t_compute = 2 * model["active_b"] * 1e9 * n / flops
         t = max(t, t_compute)
         d[n] = n * spec_mult / t
@@ -443,7 +447,7 @@ def _llama(p, args, model, gpus, cpu, info):
         return p
     if share > 0 and not gpus:
         raise ValueError("GPU layers set but no GPU assigned")
-    gpu_bw = sum(_gpu_bw(g) for g in gpus) if gpus else 0.0
+    gpu_bw = sum(_gpu_bw(g, bpw) for g in gpus) if gpus else 0.0
     cores = max(1, min(cpu["cores"], int(args.get("threads") or 0) or int(args["_cores"])))
     cpu_bw = max(_cpu_stream(cpu, cores), cpu["ram_bw_gbs"] * 0.35)   # dense layers stream better than experts
     active_gb = model["active_b"] * bpw / 8
@@ -455,7 +459,7 @@ def _llama(p, args, model, gpus, cpu, info):
         gpu_part = (shared + expert_gb * n) * share / gpu_bw if share > 0 else 0.0
         cpu_part = (shared + expert_gb * n) * (1 - share) / cpu_bw if share < 1 else 0.0
         kv_read = n * min(ctx, 8192) * model["kv_kb_per_token"] * kv_scale / 1e6 / (gpu_bw or cpu_bw)
-        t = gpu_part + cpu_part + kv_read + model["layers"] * LAYER_OVERHEAD_MS / 1000 * (1 + 0.1 * (n - 1))
+        t = gpu_part + cpu_part + kv_read + model["layers"] * _layer_ms(gpus) / 1000 * (1 + 0.1 * (n - 1))
         t *= 1 + 0.35 * (n - 1)          # llama.cpp slots batch less efficiently than vLLM (measured 2-3 slots)
         mult = (1.45 if n <= 3 else 1.2) if mtp else 1.0
         d[n] = n * mult / t
