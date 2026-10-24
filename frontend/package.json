@@ -9,7 +9,8 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "test": "vitest run",
-    "sync-py": "node scripts/sync-py.mjs"
+    "sync-py": "node scripts/sync-py.mjs",
+    "e2e": "node e2e/walkthrough.mjs"
   },
   "dependencies": {
     "@fontsource/ibm-plex-sans": "^5.3.0",
@@ -34,6 +35,7 @@
     "tailwindcss": "^3.4.19",
     "typescript": "~6.0.3",
     "vite": "^8.3.4",
-    "vitest": "^5.0.5"
+    "vitest": "^5.0.5",
+    "playwright-core": "1.55.0"
   }
 }

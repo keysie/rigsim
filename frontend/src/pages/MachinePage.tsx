@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, useStore, type Device, type Machine } from "../store";
+import { api, useStore, type Catalog, type Device, type Machine } from "../store";
 import { Bar, Field, LinkTicks, Notices, Select } from "../components/ui";
 
 type Validation = {
@@ -94,15 +94,9 @@ export default function MachinePage() {
                 </div>
                 <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto]">
                   <Field label="Processor">
-                    <Select disabled={disabled || i === 1} value={slot.cpu_id}
+                    <Select ariaLabel={`processor CPU ${i + 1}`} disabled={disabled || i === 1} value={slot.cpu_id}
                             options={years.map((c) => ({ value: c.id, label: `${c.name} · ${c.cores}c · ${c.year}${c.proposed ? " · community, unverified" : ""}` }))}
-                            onChange={(id) => patch((m) => {
-                              const c = catalog.cpus.find((x) => x.id === id)!;
-                              m.cpus.forEach((s) => { s.cpu_id = id; s.ram_channels = Math.min(s.ram_channels, c.mem_channels);
-                                s.ram_mts = catalog.ram_speeds[c.mem_type].includes(s.ram_mts) ? s.ram_mts : c.max_mem_mts; });
-                              if (c.sockets < 2) { m.cpus[1].enabled = false; m.devices.forEach((d) => { d.cpu = 0; }); }
-                              m.devices.forEach((d) => { d.link_gen = Math.min(d.link_gen, c.pcie_gen); });
-                            })} />
+                            onChange={(id) => patch((m) => switchCpu(m, id, catalog))} />
                   </Field>
                   <div className="text-xs text-muted self-end leading-5">
                     {spec.cores} cores{spec.e_cores ? ` (${spec.cores - spec.e_cores}P + ${spec.e_cores}E)` : ""} / {spec.threads} threads · {spec.isa.toUpperCase()} · {spec.all_core_ghz} GHz<br />
@@ -113,7 +107,7 @@ export default function MachinePage() {
                   <Dimms channels={slot.ram_channels} max={spec.mem_channels} />
                   <div className="grid flex-1 grid-cols-3 gap-2">
                     <Field label="RAM">
-                      <Select disabled={disabled} value={slot.ram_gb} options={catalog.ram_sizes_gb.map((g) => ({ value: g, label: `${g} GB` }))}
+                      <Select disabled={disabled} value={slot.ram_gb} options={(catalog.soc_ram_gb[slot.cpu_id] ?? catalog.ram_sizes_gb).map((g) => ({ value: g, label: `${g} GB` }))}
                               onChange={(g) => patch((m) => { m.cpus[i].ram_gb = g; })} />
                     </Field>
                     <Field label="Speed">
@@ -224,6 +218,31 @@ function Dimms({ channels, max }: { channels: number; max: number }) {
 
 const LINK_TYPES = [{ value: "pcie", label: "PCIe" }, { value: "tb3", label: "Thunderbolt 3 (eGPU)" }, { value: "tb4", label: "TB4 / USB4" },
   { value: "usb4v2", label: "USB4 v2" }, { value: "tb5", label: "Thunderbolt 5" }];
+
+/** Switch the CPU of a machine and keep everything around it consistent: memory settings the new part
+ *  supports, the second socket only where it exists, and integrated GPUs that belong to the CPU. */
+export function switchCpu(m: Machine, id: string, catalog: Catalog) {
+  const c = catalog.cpus.find((x) => x.id === id);
+  if (!c) return;
+  const iGpuOf = catalog.soc_gpu_for ?? {};
+  const socSizes = catalog.soc_ram_gb?.[id];
+  m.cpus.forEach((s) => {
+    s.cpu_id = id;
+    s.ram_channels = socSizes ? c.mem_channels : Math.min(s.ram_channels, c.mem_channels);
+    s.ram_mts = (catalog.ram_speeds[c.mem_type] ?? []).includes(s.ram_mts) ? s.ram_mts : c.max_mem_mts;
+    if (socSizes && !socSizes.includes(s.ram_gb)) s.ram_gb = socSizes.reduce((a, b) => (Math.abs(b - s.ram_gb) < Math.abs(a - s.ram_gb) ? b : a));
+  });
+  if (c.sockets < 2 && m.cpus[1]) { m.cpus[1].enabled = false; m.devices.forEach((d) => { d.cpu = 0; }); }
+  // integrated GPUs: drop those of other SoCs, add this SoC's own
+  m.devices = m.devices.filter((d) => !(d.kind === "gpu" && iGpuOf[d.model_id] && iGpuOf[d.model_id] !== id));
+  const own = Object.entries(iGpuOf).find(([, cpu]) => cpu === id)?.[0];
+  if (own && !m.devices.some((d) => d.model_id === own)) {
+    let n = 1; while (m.devices.some((d) => d.id === `gpu-${n}`)) n++;
+    m.devices.unshift({ id: `gpu-${n}`, kind: "gpu", model_id: own, cpu: 0, link_gen: 4, link_width: 16, link_type: "pcie" });
+  }
+  m.nvlinks = m.nvlinks.filter(([a, b]) => m.devices.some((d) => d.id === a) && m.devices.some((d) => d.id === b));
+  m.devices.forEach((d) => { if ((d.link_type ?? "pcie") === "pcie") d.link_gen = Math.min(d.link_gen, Math.max(1, c.pcie_gen)); });
+}
 
 function LinkRow({ d, maxGen, maxWidth, dv, activeCpus, setDevice }: {
   d: Device; maxGen: number; maxWidth: number; dv?: { link_gen: number; link_width: number; link_bw_gbs: number; link_type?: string };
