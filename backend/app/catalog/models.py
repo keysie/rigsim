@@ -41,7 +41,7 @@ MODELS = [
          layers=48, experts=16, active_experts=1, shared_experts=1, expert_share=0.85, kv_kb_per_token=200,
          recurrent_state_mb=0, mtp=False, vision=True, max_context=1048576, year=2025),
     dict(id="gpt-oss-120b", name="gpt-oss-120b (117B, A5B)", family="openai", params_b=117, active_b=5.1,
-         layers=36, experts=128, active_experts=4, shared_experts=0, expert_share=0.95, kv_kb_per_token=72,
+         layers=36, experts=128, active_experts=4, shared_experts=0, expert_share=0.985, kv_kb_per_token=72,
          recurrent_state_mb=0, mtp=False, vision=False, max_context=131072, year=2025),
     dict(id="mixtral-8x7b", name="Mixtral 8x7B", family="mistral", params_b=47, active_b=13, layers=32, experts=8,
          active_experts=2, shared_experts=0, expert_share=0.9, kv_kb_per_token=128, recurrent_state_mb=0,
@@ -73,6 +73,10 @@ ENGINES = {
         versions={
             "0.1.43.1": dict(args=[
                 dict(name="quantization", type="choice", default="iq3_s", options=["iq3_s", "iq3_xxs", "iq2_xs", "q2_0", "iq4_xs"], help="expert pack"),
+                dict(name="multi_gpu", type="choice", default="layer-split", options=["layer-split", "peer-device"],
+                     help="two or more cards: --layer-split (stages) or --peer-device (the first card runs the model, the others cache experts); one or the other"),
+                dict(name="expert_cache_mib", type="int", default=0, min=0, max=200000, help="--expert-cache per card in MiB (0 = auto: what is left after weights and KV)"),
+                dict(name="pool_workers", type="int", default=0, min=0, max=64, help="--pool-workers CPU expert workers (0 = auto)"),
                 dict(name="batch", type="int", default=1, min=1, max=8, help="parallel slots (1 = one conversation at a time)"),
                 dict(name="batch_groups", type="choice", default="auto", options=["auto", "1", "2", "3", "4"],
                      help="pipeline groups on a layer split; auto = one per card if it divides the slots"),
@@ -91,6 +95,10 @@ ENGINES = {
             ]),
             "0.2.2": dict(args=[
                 dict(name="quantization", type="choice", default="iq3_s", options=["iq3_s", "iq3_xxs", "iq2_xs", "q2_0", "iq4_xs"], help="expert pack"),
+                dict(name="multi_gpu", type="choice", default="layer-split", options=["layer-split", "peer-device"],
+                     help="two or more cards: --layer-split (stages) or --peer-device (the first card runs the model, the others cache experts); one or the other"),
+                dict(name="expert_cache_mib", type="int", default=0, min=0, max=200000, help="--expert-cache per card in MiB (0 = auto: what is left after weights and KV)"),
+                dict(name="pool_workers", type="int", default=0, min=0, max=64, help="--pool-workers CPU expert workers (0 = auto)"),
                 dict(name="batch", type="int", default=1, min=1, max=8, help="parallel slots"),
                 dict(name="batch_groups", type="choice", default="auto", options=["auto", "1", "2", "3", "4"],
                      help="auto = one serial group on two NVIDIA cards, else one per card"),
@@ -115,7 +123,9 @@ ENGINES = {
                 "llama-3.1-8b", "qwen2.5-32b", "llama-3.3-70b", "llama-4-scout", "gpt-oss-120b", "mixtral-8x7b", "phi-4-14b"],
         versions={
             "0.31.0": dict(args=[
-                dict(name="tensor_parallel", type="choice", default="1", options=["1", "2", "4", "8"], help="cards per replica"),
+                dict(name="tensor_parallel", type="choice", default="1", options=["1", "2", "4", "8"], help="cards per replica (tensor parallel)"),
+                dict(name="pipeline_parallel", type="choice", default="1", options=["1", "2", "4"], help="pipeline stages across cards; tensor x pipeline = assigned GPUs"),
+                dict(name="max_num_batched_tokens", type="int", default=8192, min=256, max=131072, help="prompt tokens per scheduler step (chunked prefill)"),
                 dict(name="max_num_seqs", type="int", default=8, min=1, max=256, help="requests batched at once"),
                 dict(name="max_model_len", type="int", default=32768, min=2048, max=262144, help="context per request"),
                 dict(name="gpu_memory_utilization", type="float", default=0.9, min=0.5, max=0.98, help="VRAM share"),
@@ -141,7 +151,9 @@ ENGINES = {
                      help="layers on the GPU; the rest runs on the CPU"),
                 dict(name="split_mode", type="choice", default="layer", options=["layer", "row"], help="multi-card split"),
                 dict(name="cache_type", type="choice", default="f16", options=["f16", "q8_0", "q4_0"], help="KV cache"),
-                dict(name="ubatch", type="int", default=512, min=64, max=8192, help="prompt micro-batch"),
+                dict(name="batch", type="int", default=2048, min=64, max=16384, help="--batch logical batch (prompt tokens per step)"),
+                dict(name="ubatch", type="int", default=512, min=64, max=8192, help="--ubatch physical micro-batch, at most --batch"),
+                dict(name="cpu_moe", type="bool", default=False, help="--n-cpu-moe all: MoE experts on the CPU, attention and dense parts on the GPU"),
                 dict(name="flash_attn", type="bool", default=True, help="flash attention"),
                 dict(name="mtp", type="bool", default=True, help="MTP drafts where the model has them"),
                 dict(name="threads", type="int", default=0, min=0, max=256, help="CPU threads (0 = assigned cores)"),

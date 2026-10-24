@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, useStore } from "../store";
-import { Bar, Field, Notices, Select } from "../components/ui";
+import { Bar, Field, NumInput, Notices, Select } from "../components/ui";
 
 type Ev = { t: number; ev: "submit" | "admit" | "done"; engine: string; kind: string; conv: string; context?: number;
   out?: number; prefill?: number; wait?: number; reread?: boolean; tag?: string };
@@ -99,10 +99,10 @@ export default function LivePage() {
       <p className="mt-1 text-muted">One scenario, replayed at a chosen speed: every request as it is queued, admitted and finished, and the load it puts on each part.</p>
       <div className="mt-5 flex flex-wrap items-end gap-4">
         <Field label="Concurrent workstreams">
-          <input type="number" min={1} max={16} value={conc} className="w-24" onChange={(e) => setConc(Number(e.target.value))} />
+          <NumInput min={1} max={32} value={conc} className="w-24" onChange={(v) => setConc(v ?? 1)} />
         </Field>
         <Field label="Scenario" hint="index into the sampled scenarios">
-          <input type="number" min={0} max={s.scenarios - 1} value={scenario} className="w-24" onChange={(e) => setScenario(Number(e.target.value))} />
+          <NumInput min={0} max={s.scenarios - 1} value={scenario} className="w-24" onChange={(v) => setScenario(v ?? 0)} />
         </Field>
         <Field label="Replay speed">
           <Select value={speed} options={SPEEDS.map((x) => ({ value: x, label: `${x}×` }))} onChange={setSpeed} />
@@ -110,9 +110,9 @@ export default function LivePage() {
         <button className="btn btn-primary" onClick={run} disabled={busy || !s.roles.maker}>{busy ? "Simulating…" : "Run and watch"}</button>
         {trace && !trace.errors.length && (
           <>
-            <button className="btn" onClick={() => setPlaying((p) => !p)}>{playing ? "Pause" : clock >= trace.makespan_s ? "Replay" : "Resume"}</button>
-            <input type="range" min={0} max={trace.makespan_s} value={clock} step={1} className="w-48" aria-label="position"
-                   onChange={(e) => { setClock(Number(e.target.value)); if (clock >= trace.makespan_s) setPlaying(false); }}
+            <button className="btn" onClick={() => { if (!playing && clock >= trace.makespan_s) { setClock(0); setPlaying(true); } else setPlaying((p) => !p); }}>{playing ? "Pause" : clock >= trace.makespan_s ? "Replay" : "Resume"}</button>
+            <input type="range" min={0} max={trace.makespan_s} value={clock} step="any" className="w-48" aria-label="position"
+                   onChange={(e) => { const v = Number(e.target.value); setClock(v >= trace.makespan_s - 0.01 ? trace.makespan_s : v);   /* the browser rounds the value; the last task ends exactly at the maximum */ if (clock >= trace.makespan_s) setPlaying(false); }}
                    onMouseDown={() => setPlaying(false)} />
           </>
         )}

@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { api, useStore, type ArgDef, type EngineSpec } from "../store";
-import { Field, Select } from "../components/ui";
+import { Field, NumInput, Select } from "../components/ui";
 import ExportMeasurement from "../components/ExportMeasurement";
 
 type Cluster = { key: { gpus: string[]; engine: string; model: string; quant: string; streams: number }; n: number; trust: number;
@@ -10,6 +10,7 @@ type Derived = Record<string, {
   kind: string; slots: number; prefill_rate: number; decode_total: Record<string, number>;
   speed_per_request: Record<string, number>; memory: Record<string, unknown>; notes: string[]; errors: string[];
   limits: Record<string, number>;
+  arg_states?: Record<string, { disabled: boolean; force: unknown; reason: string }>;
 }>;
 
 export default function EnginesPage() {
@@ -42,13 +43,21 @@ export default function EnginesPage() {
   const activeCpus = machine.cpus.map((c, i) => ({ ...c, i })).filter((c) => c.enabled);
   const cpuSpec = (i: number) => catalog.cpus.find((c) => c.id === machine.cpus[i].cpu_id)!;
   const patch = (id: string, fn: (e: EngineSpec) => void) => {
-    const next = structuredClone(engines); fn(next.find((e) => e.id === id)!); setEngines(next);
+    const next = structuredClone(engines); const x = next.find((e) => e.id === id)!; fn(x);
+    // tensor parallel follows the number of assigned GPUs whenever that is a valid choice: a mismatch is always an error
+    const tp = catalog.engines[x.engine]?.versions[x.version]?.args.find((a) => a.name === "tensor_parallel");
+    if (tp?.options && x.gpus.length >= 1 && tp.options.includes(String(x.gpus.length)) && String(x.args.tensor_parallel ?? tp.default) !== String(x.gpus.length)) {
+      x.args = { ...x.args, tensor_parallel: String(x.gpus.length) };
+    }
+    setEngines(next);
   };
   const add = () => {
     const used = new Set(engines.map((e) => e.id));
     let n = engines.length + 1; while (used.has(`engine-${n}`)) n++;
+    const gpuList = machine.devices.filter((d) => d.kind === "gpu");
+    const free = gpuList.find((d) => !engines.some((e) => e.gpus.includes(d.id))) ?? gpuList[0];
     setEngines([...engines, { id: `engine-${n}`, name: `Engine ${n}`, engine: "llama.cpp", version: "b11552",
-      model_id: "qwen3.8-27b", args: {}, gpus: [], cpu: activeCpus[0]?.i ?? 0, cpu_cores: 4, storage: ssds[0]?.id ?? null }]);
+      model_id: "qwen3.8-27b", args: {}, gpus: free ? [free.id] : [], cpu: activeCpus[0]?.i ?? 0, cpu_cores: 4, storage: ssds[0]?.id ?? null }]);
   };
   const roles = useStore((s) => s.roles);
   const ROLE_NAMES: Record<string, string> = { coordinator: "coordinator", maker: "maker", sub: "sub-makers", guard: "guard", judge: "judge", reranker: "reranker" };
@@ -139,8 +148,8 @@ export default function EnginesPage() {
                         </Field>
                       )}
                       <Field label="CPU cores" hint={`${cpuSpec(e.cpu).cores} on CPU ${e.cpu + 1}`}>
-                        <input type="number" min={0} max={cpuSpec(e.cpu).cores} value={e.cpu_cores} className="w-20"
-                               onChange={(ev) => patch(e.id, (x) => { x.cpu_cores = Number(ev.target.value); })} />
+                        <NumInput min={1} max={cpuSpec(e.cpu).cores} value={e.cpu_cores} className="w-20"
+                                  onChange={(n) => patch(e.id, (x) => { x.cpu_cores = n ?? 1; })} />
                       </Field>
                       <Field label="Model storage">
                         <Select value={e.storage ?? ""} options={[{ value: "", label: "none" }, ...ssds.map((s) => ({ value: s.id, label: s.id }))]}
@@ -150,7 +159,8 @@ export default function EnginesPage() {
                   )}
 
                   <div className="mt-4 grid gap-x-4 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
-                    {args.map((a) => <ArgField key={a.name} a={a} value={e.args[a.name]} onChange={(v) => patch(e.id, (x) => { x.args = { ...x.args, [a.name]: v }; })} />)}
+                    {args.map((a) => <ArgField key={a.name} a={a} value={e.args[a.name]} state={d?.arg_states?.[a.name]}
+                                               onChange={(v) => patch(e.id, (x) => { x.args = { ...x.args, [a.name]: v }; })} />)}
                   </div>
                   {(community[e.id] ?? []).length > 0 && !hosted && (
                     <div className="mt-4 rounded border border-mask/40 bg-mask-soft/40 p-3 text-sm">
@@ -173,10 +183,10 @@ export default function EnginesPage() {
                       {[["decode_1", "writes alone, tok/s"], [`decode_${d?.slots && d.slots > 1 ? d.slots : 2}`, `writes with ${d?.slots && d.slots > 1 ? d.slots : 2} at once, tok/s total`],
                         ["prefill", "reads prompts, tok/s"], ["kv_room_tokens", "KV room, tokens"]].map(([k, label]) => (
                         <Field key={k} label={label}>
-                          <input type="number" min={0} className="w-32" aria-label={`measured ${k}`} value={e.benchmarks?.[k] ?? ""}
-                                 placeholder="derived" onChange={(ev) => patch(e.id, (x) => {
-                                   const b = { ...(x.benchmarks ?? {}) }; const v = ev.target.value === "" ? null : Number(ev.target.value);
-                                   if (v === null) delete b[k]; else b[k] = v; x.benchmarks = b; })} />
+                          <NumInput min={0} int={false} step="any" allowEmpty className="w-32" aria-label={`measured ${k}`} value={e.benchmarks?.[k] ?? null}
+                                    placeholder="derived" onChange={(v) => patch(e.id, (x) => {
+                                      const b = { ...(x.benchmarks ?? {}) };
+                                      if (v === null || v <= 0) delete b[k]; else b[k] = v; x.benchmarks = b; })} />
                         </Field>
                       ))}
                     </div>
@@ -224,22 +234,31 @@ export default function EnginesPage() {
   );
 }
 
-function ArgField({ a, value, onChange }: { a: ArgDef; value: unknown; onChange: (v: unknown) => void }) {
-  const v = value ?? a.default;
+type ArgState = { disabled: boolean; force: unknown; reason: string };
+
+/** One argument. `state` comes from the rules the engine itself applies: a greyed-out field has no effect in this
+ *  setup; a forced value is what the engine would use regardless of what is set. The reason is shown under it. */
+function ArgField({ a, value, state, onChange }: { a: ArgDef; value: unknown; state?: ArgState; onChange: (v: unknown) => void }) {
+  const forced = state?.force !== null && state?.force !== undefined;
+  const v = forced ? state!.force : (value ?? a.default);
+  const off = Boolean(state?.disabled);
+  const hint = state?.reason ? <span className={off || forced ? "text-amber" : undefined}>{state.reason}{forced ? ` → ${String(state!.force)}` : ""}</span> : a.help;
+  const wrap = (child: ReactNode) => (
+    <Field label={a.name} hint={hint}>
+      <div className={off ? "opacity-50" : undefined}>{child}</div>
+    </Field>
+  );
   if (a.type === "bool") return (
-    <label className="flex items-center gap-2 text-sm text-ink" title={a.help}>
-      <input type="checkbox" aria-label={a.name} checked={Boolean(v)} onChange={(e) => onChange(e.target.checked)} />{a.name}
+    <label className={`flex items-center gap-2 text-sm text-ink ${off ? "opacity-50" : ""}`} title={state?.reason || a.help}>
+      <input type="checkbox" aria-label={a.name} checked={Boolean(v)} disabled={off || forced} onChange={(e) => onChange(e.target.checked)} />{a.name}
+      {state?.reason ? <span className="text-xs text-amber">{state.reason}</span> : null}
     </label>
   );
-  if (a.type === "choice") return (
-    <Field label={a.name} hint={a.help}>
-      <Select ariaLabel={a.name} value={String(v)} options={(a.options ?? []).map((o) => ({ value: o, label: o }))} onChange={onChange} />
-    </Field>
+  if (a.type === "choice") return wrap(
+    <Select ariaLabel={a.name} disabled={off || forced} value={String(v)} options={(a.options ?? []).map((o) => ({ value: o, label: o }))} onChange={onChange} />
   );
-  return (
-    <Field label={a.name} hint={a.help}>
-      <input type="number" aria-label={a.name} value={Number(v)} min={a.min} max={a.max} step={a.type === "float" ? 0.05 : 1}
-             onChange={(e) => onChange(a.type === "float" ? parseFloat(e.target.value) : parseInt(e.target.value, 10))} />
-    </Field>
+  return wrap(
+    <NumInput aria-label={a.name} value={Number(v)} min={a.min} max={a.max} step={a.type === "float" ? 0.05 : 1} int={a.type !== "float"}
+              disabled={off || forced} onChange={(n) => onChange(n)} />
   );
 }

@@ -37,7 +37,12 @@ no server, no accounts, nothing is sent anywhere. Configurations can be saved an
 2. **Engines** — one model per engine. Strata, vLLM, llama.cpp and a hosted API, with versions that define the
    arguments. Assign GPUs, a CPU, cores and a model SSD. Beside each engine: prompt-reading rate, writing rate
    alone and with several requests, expert-cache hit, KV room, VRAM per card, and why something does not fit.
-   Measured values can be entered and override the derived ones.
+   Measured values can be entered and override the derived ones. Arguments follow the rules the engines
+   themselves apply (`backend/app/argrules.py`, from the engines' documentation): what has no effect in the
+   current setup is greyed out with the reason, what the engine would override is shown as the forced value
+   — a Strata `--pipeline-windows` with more than one slot, `--batch-mtp` on the pipelined path, vLLM FP8 on a
+   pre-Ada card, tensor × pipeline parallel against the assigned GPUs, a quantised llama.cpp KV cache without
+   flash attention. Every number typed is kept inside its documented range, in the page and in the model.
 3. **Roles & simulate** — coordinator, maker, sub-makers, output guard, judge, reranker. A workload described
    as ranges, sampled per scenario, with two levers: *work per task* (how many turns and tool calls a task
    takes — a stronger model needs fewer) and *attempts per task* (how often a task is redone). One button
@@ -122,7 +127,8 @@ cd frontend && npm run dev                  # Vite dev server; runs Python in th
 VITE_API_BASE=http://127.0.0.1:8080 npm run dev   # ...or against the dev server
 ```
 
-Browser walkthrough (29 checks across every page, in Chromium, against the built site; also a CI job):
+Browser checks (in Chromium against the built site; also a CI job): the walkthrough (34 checks across every
+page) and the robustness suite (35 checks: every defect found in exploratory testing, replayed):
 `cd frontend && npm run build && (cd dist && python3 -m http.server 8090 &) && npx playwright-core install chromium && npm run e2e`.
 
 Tests: `cd backend && python -m pytest -q` (machine rules, calibration bounds, API; 20) and

@@ -128,6 +128,7 @@ class Workload:
     visible_frac: float = 0.1
     replay_thinking: bool = False
     tasks_per_ws: int = 3
+    notes: list = field(default_factory=list, repr=False, compare=False)
     work_scale: float = 1.0          # lever: how much work one task is, relative to the ranges (turns, tool calls, outputs)
     reruns: float = 1.0              # lever: how often a task is run before it counts (1 = once; 1.5 = half the tasks twice)
     work_scale: float = 1.0        # multiplies turns per task: how much agent work one task takes (model-dependent)
@@ -140,7 +141,57 @@ class Workload:
             v = getattr(w, f.name)
             if isinstance(v, list):
                 setattr(w, f.name, tuple(v))
+        w.notes = sanitize_workload(w)
         return w
+
+
+# per-field limits: (low, high). Ranges are (min, max) pairs; reversed pairs are swapped, missing or
+# non-numeric parts fall back to the default, everything is clamped so one stray digit cannot run for hours.
+_LIMITS = {
+    "maker_turns": (1, 200), "answer_median": (1, 32000), "tool_calls_mean": (0.0, 20.0), "p_delegate": (0.0, 1.0),
+    "fanout": (1, 16), "tool_result_median": (1, 30000), "tool_exec_median_s": (0.0, 3600.0), "p_approval": (0.0, 1.0),
+    "sub_turns": (1, 200), "sub_answer_median": (1, 32000), "sub_tool_calls_mean": (0.0, 20.0),
+    "sub_final_tokens": (1, 32000), "task_tokens": (1, 100000),
+    "maker_sys": (0, 200000), "sub_sys": (0, 200000), "window": (2048, 2_000_000), "compact_at": (0.1, 0.99),
+    "visible_frac": (0.0, 1.0), "tasks_per_ws": (1, 20), "work_scale": (0.1, 10.0), "reruns": (1.0, 5.0),
+}
+
+
+def _num(v, default):
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return default
+    return default if (isinstance(v, bool) or f != f or abs(f) == float("inf")) else f
+
+
+def sanitize_workload(w: "Workload") -> list[str]:
+    """Repairs the workload in place and returns what it changed, for the result's warnings."""
+    notes: list[str] = []
+    for f in fields(Workload):
+        if f.name in _LIMITS:
+            cur = getattr(w, f.name)
+            dflt = f.default
+            lo, hi = _LIMITS[f.name]
+            is_int = isinstance(dflt, int) and not isinstance(dflt, bool) or (isinstance(dflt, tuple) and isinstance(dflt[0], int))
+            if isinstance(dflt, tuple):
+                a = _num(cur[0] if isinstance(cur, (tuple, list)) and len(cur) > 0 else None, dflt[0])
+                b = _num(cur[1] if isinstance(cur, (tuple, list)) and len(cur) > 1 else None, dflt[1])
+                if a > b:
+                    a, b = b, a
+                    notes.append(f"{f.name}: minimum was above maximum; swapped")
+                a2, b2 = min(max(a, lo), hi), min(max(b, lo), hi)
+                if (a2, b2) != (a, b):
+                    notes.append(f"{f.name}: limited to {lo}–{hi}")
+                new = (int(round(a2)), int(round(b2))) if is_int else (a2, b2)
+            else:
+                v = _num(cur, dflt)
+                v2 = min(max(v, lo), hi)
+                if v2 != v or v != cur:
+                    notes.append(f"{f.name}: {cur!r} replaced by {int(round(v2)) if is_int else v2}")
+                new = int(round(v2)) if is_int else v2
+            setattr(w, f.name, new)
+    return notes
 
 
 @dataclass

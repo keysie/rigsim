@@ -58,8 +58,10 @@ export default function MachinePage() {
   });
 
   const years = useMemo(() => [...catalog.cpus].sort((a, b) => a.vendor.localeCompare(b.vendor) || a.year - b.year), [catalog]);
-  const gpuOptions = useMemo(() => [...catalog.gpus].sort((a, b) => a.vendor.localeCompare(b.vendor) || a.year - b.year)
-    .map((g) => ({ value: g.id, label: `${g.name} · ${g.vram_gb} GB · ${g.year}${g.proposed ? " · community, unverified" : ""}` })), [catalog]);
+  const gpuOptions = useMemo(() => [...catalog.gpus]
+    .filter((g) => { const soc = catalog.soc_gpu_for?.[g.id]; return !soc || machine.cpus.some((c) => c.enabled && c.cpu_id === soc); })   // an integrated GPU belongs to its SoC only
+    .sort((a, b) => a.vendor.localeCompare(b.vendor) || a.year - b.year)
+    .map((g) => ({ value: g.id, label: `${g.name} · ${g.vram_gb} GB · ${g.year}${g.proposed ? " · community, unverified" : ""}` })), [catalog, machine.cpus]);
 
   return (
     <div>
@@ -138,7 +140,7 @@ export default function MachinePage() {
           <div>
             <div className="flex items-center justify-between">
               <h2>Storage</h2>
-              <button className="btn" onClick={() => addDevice("ssd")}>Add SSD</button>
+              <button className="btn" disabled={machine.devices.filter((d) => d.kind === "ssd").length >= 8} title="at most 8 drives" onClick={() => addDevice("ssd")}>Add SSD</button>
             </div>
             <div className="mt-3 flex flex-col gap-2">
               {ssds.length === 0 && <p className="text-sm text-muted">No SSD yet. Models load from here; add one to measure load times.</p>}
@@ -166,7 +168,7 @@ export default function MachinePage() {
           <div>
             <div className="flex items-center justify-between">
               <h2>GPUs</h2>
-              <button className="btn" onClick={() => addDevice("gpu")}>Add GPU</button>
+              <button className="btn" disabled={machine.devices.filter((d) => d.kind === "gpu").length >= 8} title="at most 8 GPUs" onClick={() => addDevice("gpu")}>Add GPU</button>
             </div>
             <div className="mt-3 flex flex-col gap-2">
               {gpus.length === 0 && <p className="text-sm text-muted">No GPU yet. Engines need at least one unless they run on the CPU.</p>}
@@ -249,7 +251,7 @@ export function switchCpu(m: Machine, id: string, catalog: Catalog) {
   const socSizes = catalog.soc_ram_gb?.[id];
   m.cpus.forEach((s) => {
     s.cpu_id = id;
-    s.ram_channels = socSizes ? c.mem_channels : Math.min(s.ram_channels, c.mem_channels);
+    s.ram_channels = c.mem_channels;      // a new CPU comes fully populated; reduce it by hand if the board does not
     s.ram_mts = (catalog.ram_speeds[c.mem_type] ?? []).includes(s.ram_mts) ? s.ram_mts : c.max_mem_mts;
     if (socSizes && !socSizes.includes(s.ram_gb)) s.ram_gb = socSizes.reduce((a, b) => (Math.abs(b - s.ram_gb) < Math.abs(a - s.ram_gb) ? b : a));
   });

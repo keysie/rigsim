@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 
 from .catalog.gpus import compute_efficiency, kernel_efficiency, layer_overhead_factor, power_factors
 from .catalog.models import ENGINES, MODEL_BY_ID, QUANTS
+from . import argrules
 
 GPU_BW_EFF = 0.75          # share of spec bandwidth a decode kernel achieves (27B AWQ on a 3090: 39 tok/s; 8B Q4_0: 167)
 GPU_FLOPS_EFF = 0.50       # share of FP16 tensor peak a prefill achieves (dense models; llama.cpp pp512 8B: ~0.68 on 3090/4090)
@@ -48,6 +49,7 @@ class EnginePerf:
     cache_convs: int = 1
     window: int = 32768
     memory: dict = field(default_factory=dict)
+    arg_states: dict = field(default_factory=dict)   # from argrules: disabled / forced arguments with reasons
     watts_busy: float = 0.0        # W drawn by this engine's GPUs (at their caps) and CPU share while it works
     watts_idle: float = 0.0        # W those parts draw when this engine is idle
     notes: list[str] = field(default_factory=list)
@@ -93,6 +95,34 @@ def _nvlinked(gpus, machine_info):
     return all(frozenset((a, b)) in pairs for a, b in zip(ids, ids[1:]))
 
 
+def _finite(v, default):
+    """A usable number: None, NaN, inf, text and booleans fall back to the default."""
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return default
+    if isinstance(v, bool) or f != f or f in (float("inf"), float("-inf")):
+        return default
+    return f
+
+
+def _clamp_args(p, args, schema):
+    """Keep every numeric argument inside its schema range (the UI's min/max are not enforced on typing).
+    Values that are not numbers fall back to the default; changed values are reported in the notes."""
+    for a in schema:
+        if a["type"] not in ("int", "float") or a["name"] not in args:
+            continue
+        raw = args[a["name"]]
+        v = _finite(raw, a["default"])
+        lo, hi = a.get("min", 0), a.get("max", 10_000_000)
+        c = min(max(v, lo), hi)
+        if a["type"] == "int":
+            c = int(round(c))
+        if c != raw:
+            p.notes.append(f"{a['name']}: {raw!r} is outside {lo}–{hi} or not a number; using {c}")
+        args[a["name"]] = c
+
+
 def derive(spec, machine_info) -> EnginePerf:
     eng = ENGINES.get(spec.engine)
     p = EnginePerf(engine_id=spec.id, kind="batch")
@@ -109,10 +139,19 @@ def derive(spec, machine_info) -> EnginePerf:
     if spec.model_id not in eng["models"]:
         p.errors.append(f"{eng['name']} cannot serve {model['name']}")
         return p
-    args = {a["name"]: a["default"] for a in eng["versions"][spec.version]["args"]}
+    schema = eng["versions"][spec.version]["args"]
+    args = {a["name"]: a["default"] for a in schema}
     args.update(spec.args or {})
+    _clamp_args(p, args, schema)
+    _gpu_specs = []
+    for gid in spec.gpus:
+        d = machine_info["_devices"].get(gid) if machine_info else None
+        if d and d["kind"] == "gpu":
+            _gpu_specs.append(d["spec"])
+    p.arg_states = argrules.evaluate(spec.engine, spec.version, args, len(spec.gpus), _gpu_specs, model)
+    p.notes += argrules.apply(p.arg_states, args)
     args["_version"] = spec.version
-    args["_cores"] = max(1, int(spec.cpu_cores or 1))
+    args["_cores"] = max(1, min(4096, int(_finite(spec.cpu_cores, 1))))
     try:
         if spec.engine == "hosted-api":
             return _apply_benchmarks(_hosted(p, args, model), spec)
@@ -131,6 +170,9 @@ def derive(spec, machine_info) -> EnginePerf:
         return r
     except ValueError as e:
         p.errors.append(str(e))
+        return p
+    except Exception as e:  # noqa: BLE001 - one broken engine must not blank the others
+        p.errors.append(f"internal error while deriving this engine ({type(e).__name__}: {e}); please report it with the settings used")
         return p
 
 
@@ -151,7 +193,11 @@ def _watts(p: EnginePerf, gpus, cpu, info) -> None:
 def _apply_benchmarks(p: EnginePerf, spec) -> EnginePerf:
     """Measured values the user entered replace the derived ones. A measured writing rate for
     one count of parallel requests rescales the whole table; measured counts stay as given."""
-    b = {k: float(v) for k, v in (spec.benchmarks or {}).items() if v not in (None, "", 0)}
+    b = {}
+    for k, v in (spec.benchmarks or {}).items():
+        f = _finite(v, 0.0)
+        if f > 0:
+            b[k] = f
     if not b or p.errors:
         return p
     measured = {int(k.split("_")[1]): v for k, v in b.items() if k.startswith("decode_") and k.split("_")[1].isdigit()}
@@ -224,6 +270,13 @@ def _strata(p, args, model, gpus, cpu, info):
         raise ValueError("Strata needs at least one GPU")
     if not model["experts"]:
         raise ValueError("Strata serves MoE models with expert offload only")
+    if str(args.get("multi_gpu", "layer-split")) == "peer-device" and len(gpus) > 1:
+        # the peer tier: the first card runs every layer, the other cards hold experts behind a PCIe hop. Dense
+        # work and KV on card 1; the extra cards add cache (hit rate) but their experts arrive at link speed.
+        peer_cache_gb = sum(g["spec"]["vram_gb"] * 0.9 for g in gpus[1:])
+        p.notes.append(f"peer-device: {len(gpus) - 1} card(s) as expert tier, {peer_cache_gb:.0f} GB behind the PCIe link")
+        gpus = gpus[:1]
+        args["_peer_cache_gb"] = peer_cache_gb
     bpw = _bpw(args, "iq3_s")
     slots = int(args["batch"])
     ctx = int(args["context"])
@@ -249,13 +302,20 @@ def _strata(p, args, model, gpus, cpu, info):
     cache_total = sum(cache_per_card)
     if min(cache_per_card) <= 0:
         p.errors.append("the dense weights, KV and slots do not fit; no room for an expert cache")
+    ec = int(args.get("expert_cache_mib", 0) or 0)
+    if ec > 0:
+        cache_total = min(cache_total, ec / 1024 * len(gpus))
+    cache_total += float(args.get("_peer_cache_gb", 0.0)) * 0.5     # peer experts: counted at half, they stream over PCIe
     held = min(1.0, cache_total / experts_gb)
     hit = 1 - (1 - held) ** HIT_SKEW
     # bandwidths
     gpu_bw = [_gpu_bw(g) for g in gpus]
     ram_bw = cpu["ram_bw_gbs"]
     cores = max(1, min(cpu["cores"], int(args["_cores"])))
-    cpu_stream = _cpu_stream(cpu, cores)
+    pw = int(args.get("pool_workers", 0) or 0)
+    cpu_stream = _cpu_stream(cpu, min(cores, pw) if pw else cores)
+    if str(args.get("aux_cpus", "auto")) == "off":
+        cpu_stream *= 0.85          # 0.2.2: without the auxiliary CPU helpers the expert path loses its overlap
     pcie_bw = min(g["link_bw_gbs"] for g in gpus) * (0.7 if cpu.get("os") == "windows" else 1.0)
     pcie_miss_bw = pcie_bw * PCIE_SMALL_COPY_EFF        # expert misses are many small copies
     miss_bw = max(cpu_stream, pcie_miss_bw) if args.get("pcie_frac", "auto") == "auto" else (
@@ -391,8 +451,9 @@ def _dense_bytes_gb(model, bpw):
 def _vllm(p, args, model, gpus, cpu, info):
     p.kind = "batch"
     tp = int(args["tensor_parallel"])
-    if len(gpus) != tp:
-        raise ValueError(f"tensor_parallel {tp} needs exactly {tp} GPUs, {len(gpus)} assigned")
+    pp = int(args.get("pipeline_parallel", 1) or 1)
+    if len(gpus) != tp * pp:
+        raise ValueError(f"tensor x pipeline parallel = {tp} x {pp} needs exactly {tp * pp} GPUs, {len(gpus)} assigned")
     if tp > 1 and not all(g["spec"]["id"] == gpus[0]["spec"]["id"] for g in gpus):
         raise ValueError("tensor parallel needs identical GPUs")
     bpw = _bpw(args, "awq4")
@@ -400,6 +461,7 @@ def _vllm(p, args, model, gpus, cpu, info):
     ctx = int(args["max_model_len"])
     kv_bytes = model["kv_kb_per_token"] * 1000 * (0.5 if args.get("kv_cache_dtype") == "fp8" else 1.0)
     util = float(args["gpu_memory_utilization"])
+    p.memory["scheduling_policy"] = str(args.get("scheduling_policy", "fcfs"))
     vram = sum(g["spec"]["vram_gb"] for g in gpus) * util
     free_gb = vram - weights_gb - (OVERHEAD_GB + 1.3) * tp - (0.9 if model["vision"] else 0)   # CUDA graphs, activations
     if free_gb <= 0:
@@ -411,6 +473,9 @@ def _vllm(p, args, model, gpus, cpu, info):
     conc = min(int(args["max_num_seqs"]), conc_by_kv)
     nvl = _nvlinked(gpus, info)
     bw = sum(_gpu_bw(g, bpw) for g in gpus) * (1.0 if tp == 1 else (0.92 if nvl else 0.78))
+    if pp > 1:
+        bw /= pp                     # pipeline parallel: one stage works on a given token at a time; stages overlap only across requests
+        p.notes.append(f"pipeline parallel {pp}: a single request sees one stage's bandwidth; throughput recovers with {pp}+ requests in flight")
     flops = sum(_gpu_flops(g) for g in gpus) * _flops_eff(model) * (0.8 if bpw < 8 else 1.0)   # dequant costs prefill (box at 250 W: 27B AWQ 1,050 tok/s)
     active_gb = model["active_b"] * bpw / 8 if model["experts"] else weights_gb
     expert_gb = max(0.0, model["active_b"] - model["params_b"] * (1 - model["expert_share"])) * bpw / 8
@@ -429,7 +494,8 @@ def _vllm(p, args, model, gpus, cpu, info):
     p.speed_per_request = {n: v / n for n, v in d.items()}
     p.slots = conc
     p.max_parallel = conc
-    p.prefill_rate = flops / (2 * model["active_b"] * 1e9) * (0.9 if tp > 1 and not nvl else 1.0)
+    chunk = int(args.get("max_num_batched_tokens", 8192) or 8192)
+    p.prefill_rate = flops / (2 * model["active_b"] * 1e9) * (0.9 if tp > 1 and not nvl else 1.0) * min(1.0, 0.7 + chunk / 8192 * 0.3)
     p.prefill_quad = _attention_quad(model, flops)
     p.overhead_s = 0.3
     p.window = ctx
@@ -458,9 +524,13 @@ def _llama(p, args, model, gpus, cpu, info):
     kv_gb = ctx * model["kv_kb_per_token"] / 1e6 * kv_scale          # ctx_size is per slot here
     share = {"all": 1.0, "75%": 0.75, "50%": 0.5, "25%": 0.25, "0": 0.0}[str(args.get("n_gpu_layers", "all"))]
     vram = sum(g["spec"]["vram_gb"] for g in gpus) if gpus else 0.0
-    need = weights_gb * share + kv_gb * slots + (0.8 * len(gpus) if gpus else 0)
+    if bool(args.get("cpu_moe", False)) and model["experts"] and gpus:
+        share_bytes = model["params_b"] * (1 - model["expert_share"]) * bpw / 8
+    else:
+        share_bytes = weights_gb * share
+    need = share_bytes + kv_gb * slots + (0.8 * len(gpus) if gpus else 0)
     if gpus and need > vram:
-        p.errors.append(f"needs {need:.1f} GB VRAM ({weights_gb * share:.1f} weights + {kv_gb * slots:.1f} KV), "
+        p.errors.append(f"needs {need:.1f} GB VRAM ({share_bytes:.1f} weights + {kv_gb * slots:.1f} KV), "
                         f"{vram:.0f} GB available: fewer slots, smaller context or fewer GPU layers")
         return p
     if share > 0 and not gpus:
@@ -472,10 +542,21 @@ def _llama(p, args, model, gpus, cpu, info):
     expert_gb = max(0.0, model["active_b"] - model["params_b"] * (1 - model["expert_share"])) * bpw / 8
     mtp = bool(args.get("mtp", True)) and model["mtp"]
     d = {}
+    cpu_moe = bool(args.get("cpu_moe", False)) and expert_gb > 0 and gpus
+    if cpu_moe:
+        # --n-cpu-moe: every expert on the CPU, attention and dense parts on the GPU (the usual way to run a
+        # 120B MoE on a 24 GB card). VRAM then needs only the dense part; host RAM holds the experts.
+        dense_total_gb = model["params_b"] * (1 - model["expert_share"]) * bpw / 8
+        p.memory["host_ram_gb"] = round((weights_gb - dense_total_gb) * 1.05, 1)
+        p.notes.append(f"experts on the CPU: {weights_gb - dense_total_gb:.0f} GB in host RAM, {dense_total_gb:.0f} GB dense on the GPU")
     for n in range(1, slots + 1):
         shared = active_gb - expert_gb
-        gpu_part = (shared + expert_gb * n) * share / gpu_bw if share > 0 else 0.0
-        cpu_part = (shared + expert_gb * n) * (1 - share) / cpu_bw if share < 1 else 0.0
+        if cpu_moe:
+            gpu_part = shared / gpu_bw
+            cpu_part = expert_gb * n / cpu_bw
+        else:
+            gpu_part = (shared + expert_gb * n) * share / gpu_bw if share > 0 else 0.0
+            cpu_part = (shared + expert_gb * n) * (1 - share) / cpu_bw if share < 1 else 0.0
         kv_read = n * min(ctx, 8192) * model["kv_kb_per_token"] * kv_scale / 1e6 / (gpu_bw or cpu_bw)
         t = gpu_part + cpu_part + kv_read + model["layers"] * _layer_ms(gpus) / 1000 * (1 + 0.1 * (n - 1))
         t *= 1 + 0.35 * (n - 1)          # llama.cpp slots batch less efficiently than vLLM (measured 2-3 slots)
@@ -486,7 +567,7 @@ def _llama(p, args, model, gpus, cpu, info):
     p.slots = slots
     p.max_parallel = slots
     flops = (sum(_gpu_flops(g) for g in gpus) * _flops_eff(model) * 0.9) if gpus else cores * 60e9
-    p.prefill_rate = flops / (2 * model["active_b"] * 1e9) * (share if share > 0 else 1.0) * min(1.0, int(args.get("ubatch", 512)) / 2048 + 0.6)
+    p.prefill_rate = flops / (2 * model["active_b"] * 1e9) * (share if share > 0 else 1.0) * min(1.0, min(int(args.get("ubatch", 512)), int(args.get("batch", 2048))) / 2048 + 0.6)
     p.prefill_quad = _attention_quad(model, flops) if gpus else 0.0
     p.overhead_s = 0.3
     p.window = ctx

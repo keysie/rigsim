@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { NumInput } from "../components/ui";
 import { api, useStore, WORKLOAD_HELP, type Range, type RoleName, type Workload } from "../store";
 import { Bar, Field, Notices, Select } from "../components/ui";
 
@@ -21,6 +22,21 @@ type Result = {
     kinds: Record<string, { calls: number; per_min: number; prompt_p50: number; prompt_p90: number; wait_p90: number; dur_p90: number }>;
     gpus: Record<string, number>; bottlenecks: string[] }[];
 };
+
+/** Keeps what is typed, applies only valid levels (whole numbers 1–32) and says what it ignored. */
+function ConcurrencyInput({ value, onChange }: { value: number[]; onChange: (v: number[]) => void }) {
+  const [text, setText] = useState(value.join(", "));
+  const parts = text.split(",").map((x) => x.trim()).filter(Boolean);
+  const bad = parts.filter((x) => !/^\d+$/.test(x) || Number(x) < 1 || Number(x) > 32);
+  const good = parts.filter((x) => !bad.includes(x)).map(Number);
+  return (
+    <div>
+      <input type="text" value={text} className="w-32"
+             onChange={(e) => { setText(e.target.value); const p = e.target.value.split(",").map((x) => x.trim()).filter((x) => /^\d+$/.test(x) && Number(x) >= 1 && Number(x) <= 32).map(Number); onChange(p.length ? p : [1]); }} />
+      <div className="mt-1 text-xs text-muted">using {(good.length ? good : [1]).join(", ")}{bad.length ? <span className="text-amber"> · ignored: {bad.join(", ")} (whole numbers 1–32)</span> : null}</div>
+    </div>
+  );
+}
 
 export default function RolesPage() {
   const s = useStore();
@@ -57,7 +73,7 @@ export default function RolesPage() {
             <div className="font-medium">{r.title}</div>
             <div className="text-xs text-muted mb-2">{r.blurb}</div>
             <Select value={engineIds.has(s.roles[r.id] ?? "") ? s.roles[r.id] ?? "" : ""} options={[{ value: "", label: r.id === "maker" ? "choose an engine" : "none" },
-              ...s.engines.map((e) => ({ value: e.id, label: e.name || e.id }))]}
+              ...s.engines.map((e) => ({ value: e.id, label: (s.engines.filter((o) => (o.name || o.id) === (e.name || e.id)).length > 1) ? `${e.name || e.id} (${e.id})` : (e.name || e.id) }))]}
                     onChange={(v) => s.setRoles({ ...s.roles, [r.id]: v || null })} />
           </div>
         ))}
@@ -73,9 +89,9 @@ export default function RolesPage() {
               <div key={k} className="text-sm">
                 <div>{WORKLOAD_HELP[k]}</div>
                 <div className="mt-1 flex items-center gap-2">
-                  <input type="number" step="any" value={lo} className="w-24" onChange={(e) => set(0, Number(e.target.value))} />
+                  <NumInput int={false} min={0} step="any" value={lo} className="w-24" aria-label={`${WORKLOAD_HELP[k]}, from`} onChange={(v) => set(0, v ?? 0)} />
                   <span className="text-muted">to</span>
-                  <input type="number" step="any" value={hi} className="w-24" onChange={(e) => set(1, Number(e.target.value))} />
+                  <NumInput int={false} min={0} step="any" value={hi} className="w-24" aria-label={`${WORKLOAD_HELP[k]}, to`} onChange={(v) => set(1, v ?? 0)} />
                 </div>
               </div>
             );
@@ -85,11 +101,11 @@ export default function RolesPage() {
           <Field label="sub-agent system prompt tokens"><input type="number" value={s.workload.sub_sys} onChange={(e) => s.setWorkload({ ...s.workload, sub_sys: Number(e.target.value) })} /></Field>
           <Field label="tasks per workstream"><input type="number" value={s.workload.tasks_per_ws} min={1} max={10} onChange={(e) => s.setWorkload({ ...s.workload, tasks_per_ws: Number(e.target.value) })} /></Field>
           <Field label="work per task ×" hint="scales turns and tool calls per task; a stronger model needs fewer">
-            <input type="number" step={0.25} min={0.25} max={4} value={s.workload.work_scale} aria-label="work per task"
-                   onChange={(e) => s.setWorkload({ ...s.workload, work_scale: Number(e.target.value) })} /></Field>
+            <NumInput int={false} step={0.25} min={0.25} max={4} value={s.workload.work_scale} aria-label="work per task"
+                      onChange={(v) => s.setWorkload({ ...s.workload, work_scale: v ?? 1 })} /></Field>
           <Field label="attempts per task" hint="1 = every task succeeds first time; 1.5 = every other task is redone">
-            <input type="number" step={0.1} min={1} max={4} value={s.workload.reruns} aria-label="attempts per task"
-                   onChange={(e) => s.setWorkload({ ...s.workload, reruns: Number(e.target.value) })} /></Field>
+            <NumInput int={false} step={0.1} min={1} max={4} value={s.workload.reruns} aria-label="attempts per task"
+                      onChange={(v) => s.setWorkload({ ...s.workload, reruns: v ?? 1 })} /></Field>
           <label className="flex items-center gap-2 text-sm text-ink self-end">
             <input type="checkbox" checked={s.workload.replay_thinking} onChange={(e) => s.setWorkload({ ...s.workload, replay_thinking: e.target.checked })} />
             the orchestrator sends the model's thinking back (history reuse works)
@@ -99,11 +115,10 @@ export default function RolesPage() {
 
       <div className="mt-6 flex flex-wrap items-end gap-4">
         <Field label="Concurrent workstreams" hint="comma-separated; each level is simulated">
-          <input type="text" value={s.concurrency.join(", ")} className="w-32"
-                 onChange={(e) => s.setConcurrency(e.target.value.split(",").map((x) => parseInt(x, 10)).filter((x) => x > 0 && x <= 32))} />
+          <ConcurrencyInput value={s.concurrency} onChange={s.setConcurrency} />
         </Field>
         <Field label="Scenarios" hint="random draws from the ranges">
-          <input type="number" value={s.scenarios} min={1} max={60} className="w-24" onChange={(e) => s.setScenarios(Number(e.target.value))} />
+          <NumInput value={s.scenarios} min={1} max={60} className="w-24" onChange={(v) => s.setScenarios(v ?? 12)} />
         </Field>
         <button className="btn btn-primary" onClick={run} disabled={busy || !s.roles.maker}>{busy ? "Simulating…" : "Simulate"}</button>
         {!s.roles.maker && <span className="text-sm text-amber">No engine is assigned to the maker role — pick one above (add engines on the Engines page).</span>}

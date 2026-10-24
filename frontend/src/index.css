@@ -12,6 +12,7 @@ h1 { @apply text-2xl font-semibold tracking-tight; }
 h2 { @apply text-lg font-semibold; }
 label { @apply text-sm text-muted; }
 select, input[type="number"], input[type="text"] {
+  max-width: 100%;
   @apply bg-panel border border-line rounded px-2 py-1 text-sm text-ink;
 }
 select:focus-visible, input:focus-visible, button:focus-visible { @apply outline-none ring-2 ring-mask; }

@@ -143,6 +143,59 @@ export function normalizeMachine(m: Machine): Machine {
   return out;
 }
 
+/** Repairs a configuration (saved state, a loaded file) against the catalog: parts this version does not know
+ *  are replaced or dropped, numbers are brought into range, assignments to missing devices are removed.
+ *  Returns what it changed so the user is told instead of facing a blank page. */
+export function sanitizeConfig(c: { machine: Machine; engines: EngineSpec[]; roles: typeof DEFAULT_ROLES }, cat: Catalog) {
+  const notes: string[] = [];
+  const m = normalizeMachine(c.machine);
+  const def = cat.cpus.find((x) => x.id === "i9-10900x") ?? cat.cpus[0];
+  const clampInt = (v: unknown, lo: number, hi: number, d: number) => { const n = Number(v); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, Math.round(n))) : d; };
+  m.cpus.forEach((s, i) => {
+    if (!cat.cpus.some((x) => x.id === s.cpu_id)) {
+      notes.push(`CPU "${s.cpu_id}" is not in this version's catalog; replaced by ${def.name}`);
+      s.cpu_id = i === 1 ? m.cpus[0].cpu_id : def.id;
+    }
+  });
+  m.cpus.forEach((s) => {
+    const spec = cat.cpus.find((x) => x.id === s.cpu_id)!;
+    s.ram_gb = clampInt(s.ram_gb, 1, 8192, 128);
+    s.ram_channels = clampInt(s.ram_channels, 1, spec.mem_channels, spec.mem_channels);
+    if (!(cat.ram_speeds[spec.mem_type] ?? []).includes(Number(s.ram_mts))) s.ram_mts = spec.max_mem_mts;
+  });
+  const first = cat.cpus.find((x) => x.id === m.cpus[0].cpu_id)!;
+  if (m.cpus[1].enabled && first.sockets < 2) { m.cpus[1].enabled = false; notes.push(`${first.name} has one socket; the second CPU was switched off`); }
+  const seen = new Set<string>();
+  m.devices = (m.devices ?? []).filter((d) => {
+    const known = d.kind === "gpu" ? cat.gpus.some((g) => g.id === d.model_id) : d.kind === "ssd" ? cat.ssds.some((x) => x.id === d.model_id) : false;
+    if (!known) { notes.push(`${d.id}: "${d.model_id}" is not in this version's catalog; removed`); return false; }
+    if (seen.has(d.id)) { notes.push(`${d.id}: duplicate id removed`); return false; }
+    seen.add(d.id); return true;
+  });
+  m.devices.forEach((d) => {
+    d.link_gen = clampInt(d.link_gen, 1, 6, 3);
+    if (![1, 2, 4, 8, 16].includes(Number(d.link_width))) d.link_width = 16;
+    if (d.cpu !== 0 && d.cpu !== 1) d.cpu = 0;
+    if (!m.cpus[d.cpu].enabled) d.cpu = 0;
+  });
+  m.nvlinks = (m.nvlinks ?? []).filter(([a, b]) => seen.has(a) && seen.has(b));
+  const engines = (c.engines ?? []).filter((e) => {
+    if (!(cat.engines as Record<string, EngineDef | undefined>)[e.engine]) { notes.push(`engine "${e.name || e.id}" uses "${e.engine}", which this version does not know; removed`); return false; }
+    return true;
+  }).map((e) => {
+    const d = (cat.engines as Record<string, EngineDef>)[e.engine];
+    const x = { ...e, args: e.args ?? {}, benchmarks: e.benchmarks ?? {} };
+    if (!d.versions[x.version]) { x.version = Object.keys(d.versions)[0]; notes.push(`${x.name || x.id}: unknown version; using ${x.version}`); }
+    if (!d.models.includes(x.model_id)) { x.model_id = d.models[0]; notes.push(`${x.name || x.id}: unknown model; using ${x.model_id}`); }
+    x.cpu = x.cpu === 1 ? 1 : 0;
+    x.cpu_cores = clampInt(x.cpu_cores, 1, 4096, 4);
+    return x;
+  });
+  const ids = new Set(engines.map((e) => e.id));
+  const roles = Object.fromEntries(Object.entries(c.roles ?? {}).map(([k, v]) => [k, v && ids.has(v as string) ? v : null])) as typeof DEFAULT_ROLES;
+  return { machine: m, engines: pruneEngines(engines, m), roles, notes };
+}
+
 /** Engines keep only GPUs and storage that still exist in the machine. */
 function pruneEngines(engines: EngineSpec[], m: Machine): EngineSpec[] {
   const ids = new Set(m.devices.map((d) => d.id));
