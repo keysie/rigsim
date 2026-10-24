@@ -78,8 +78,8 @@ Forty-one further points were **held out**: more cells from the same machine, St
 on 3090 / 4090), and across the prebuilts: M1 Ultra, M3 Ultra, M4 Max, M5 Max and M5 Ultra in other
 formats and in prompt processing (llama.cpp discussion #4167), Strix Halo prompt processing and a 27B dense
 model with and without MTP plus the RX 7900 XTX (ROCm scoreboard #15021), and the Spark's prompt rate
-(#16578). Result: 17 of 17 calibration points and 37 of 41 held-out points within ±30 %, median error
-8 % and 14 %, worst held-out miss ±35 %. `backend/tests/test_validation.py` keeps the model inside those
+(#16578). Result: 17 of 17 calibration points and 38 of 41 held-out points within ±30 %, median error
+8 % and 14 %, worst held-out miss 37 %. `backend/tests/test_validation.py` keeps the model inside those
 bounds; the *Calibration data* page recomputes the whole table from the current code.
 
 **On tasks per hour.** A "task" here is whatever the workload ranges describe; a better model finishes a
