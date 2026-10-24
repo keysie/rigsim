@@ -115,6 +115,20 @@ function getWorker(): Worker {
   return worker;
 }
 
+export class CancelledError extends Error { constructor() { super("cancelled"); this.name = "CancelledError"; } }
+
+let aborter: AbortController | null = null;
+
+/** Stops whatever the simulator is doing right now. In the browser the Python runs in a worker that cannot be
+ *  interrupted, so the worker is terminated and started afresh on the next call (a few seconds, cached files).
+ *  Every pending call rejects with CancelledError. */
+export function cancelAll() {
+  if (worker) { worker.terminate(); worker = null; }
+  pending.forEach((p) => p.reject(new CancelledError()));
+  pending.clear();
+  if (aborter) { aborter.abort(); aborter = null; }
+}
+
 export async function api<T>(path: string, body?: unknown): Promise<T> {
   if (!API_BASE) {
     const id = ++seq;
@@ -124,7 +138,15 @@ export async function api<T>(path: string, body?: unknown): Promise<T> {
       getWorker().postMessage({ id, path, body, indexURL });
     });
   }
-  const r = await fetch(API_BASE + path, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : undefined);
+  aborter = aborter ?? new AbortController();
+  const signal = aborter.signal;
+  let r: Response;
+  try {
+    r = await fetch(API_BASE + path, { signal, ...(body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}) });
+  } catch (e) {
+    if ((e as Error).name === "AbortError") throw new CancelledError();
+    throw e;
+  }
   if (!r.ok) throw new Error(`${path}: ${r.status} ${await r.text()}`);
   return r.json();
 }

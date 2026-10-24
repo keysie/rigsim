@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { NumInput } from "../components/ui";
-import { api, useStore, WORKLOAD_HELP, type Range, type RoleName, type Workload } from "../store";
+import { api, cancelAll, CancelledError, useStore, WORKLOAD_HELP, type Range, type RoleName, type Workload } from "../store";
 import { Bar, Field, Notices, Select } from "../components/ui";
 
 const ROLES: { id: RoleName; title: string; blurb: string }[] = [
@@ -57,7 +57,7 @@ export default function RolesPage() {
       const r = await api<Result>("/api/simulate", { machine: s.machine, engines: s.engines, roles: s.roles, workload: s.workload,
         concurrency: s.concurrency, scenarios: s.scenarios, seed: 1 });
       s.setResults(r);
-    } catch (e) { setErr(String(e)); } finally { setBusy(false); }
+    } catch (e) { setErr(e instanceof CancelledError ? "Cancelled." : String(e)); } finally { setBusy(false); }
   };
 
   return (
@@ -121,6 +121,7 @@ export default function RolesPage() {
           <NumInput value={s.scenarios} min={1} max={60} className="w-24" onChange={(v) => s.setScenarios(v ?? 12)} />
         </Field>
         <button className="btn btn-primary" onClick={run} disabled={busy || !s.roles.maker}>{busy ? "Simulating…" : "Simulate"}</button>
+        {busy && <button className="btn" onClick={cancelAll} title="stops the run; the simulator restarts on the next call">Cancel</button>}
         {!s.roles.maker && <span className="text-sm text-amber">No engine is assigned to the maker role — pick one above (add engines on the Engines page).</span>}
         {!s.roles.maker && <span className="text-sm text-amber">Choose a maker engine first.</span>}
       </div>
