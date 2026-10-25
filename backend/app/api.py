@@ -33,21 +33,25 @@ def engines_derive(body):
     info = validate(Machine.model_validate(body["machine"]))
     specs = [EngineSpec.model_validate(e) for e in body.get("engines", [])]
     perfs = {s.id: derive(s, info) for s in specs}
-    # a second pass for Strata layouts: other engines' VRAM on the same card appears as a foreign box
+    # one engine per card, cores not oversubscribed: sharing is out of scope (README), so it is an error here too
+    users: dict = {}
     for s in specs:
-        if s.engine != "strata" or perfs[s.id].errors:
-            continue
-        for gid in s.gpus:
-            foreign = 0.0
-            for o in specs:
-                if o.id == s.id or gid not in o.gpus:
-                    continue
-                m = perfs[o.id].memory.get(gid)
-                if isinstance(m, dict) and m.get("used_gb"):
-                    foreign += float(m["used_gb"])
-            if gid in info["_devices"]:
-                info["_devices"][gid]["_foreign_gb"] = foreign
-        perfs[s.id] = derive(s, info)
+        for g in s.gpus:
+            users.setdefault(g, []).append(s)
+    for g, es in users.items():
+        if len(es) > 1:
+            for s in es:
+                perfs[s.id].errors.append(f"{g} is also used by {', '.join((o.name or o.id) for o in es if o.id != s.id)}: one engine per card — sharing a GPU is out of scope")
+    by_cpu: dict = {}
+    for s in specs:
+        if s.engine != "hosted-api":
+            by_cpu.setdefault(s.cpu, []).append(s)
+    for ci, es in by_cpu.items():
+        have = int(info["cpus"].get(ci, {}).get("cores", 0) or 0)
+        total = sum(int(s.cpu_cores or 0) for s in es)
+        if have and total > have:
+            for s in es:
+                perfs[s.id].errors.append(f"CPU {ci + 1}: the engines on it ask for {total} cores, it has {have} — cores are not shared")
     out = {s.id: perfs[s.id].public() for s in specs}
     return {"machine": {k: v for k, v in info.items() if not k.startswith("_")}, "engines": out}
 

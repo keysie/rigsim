@@ -54,6 +54,9 @@ export default function EnginesPage() {
     if (tp?.options && x.gpus.length >= 1 && tp.options.includes(String(x.gpus.length)) && String(x.args.tensor_parallel ?? tp.default) !== String(x.gpus.length)) {
       x.args = { ...x.args, tensor_parallel: String(x.gpus.length) };
     }
+    // a model that comes in specific packs: the pack field is limited to them and lands on the first one
+    const packs = catalog.models.find((m) => m.id === x.model_id)?.quants;
+    if (packs?.length && !packs.includes(String(x.args.quantization ?? ""))) x.args = { ...x.args, quantization: packs[0] };
     setEngines(next);
   };
   const add = () => {
@@ -105,12 +108,14 @@ export default function EnginesPage() {
           const hosted = def.kind === "hosted";
           const usedGpus = new Map<string, string>();
           engines.forEach((o) => { if (o.id !== e.id) o.gpus.forEach((g) => usedGpus.set(g, o.name || o.id)); });
+          // cores on this engine's CPU not taken by other local engines: no oversubscription, no sharing
+          const coresLeft = (me: EngineSpec) => cpuSpec(me.cpu).cores - engines.filter((o) => o.id !== me.id && o.cpu === me.cpu && o.engine !== "hosted-api").reduce((a, o) => a + (o.cpu_cores || 0), 0);
           return (
             <section key={e.id} className="rounded-lg border border-line bg-panel">
               <div className={`grid gap-5 p-5 ${side(e) ? "grid-cols-[minmax(0,1fr)_minmax(0,1fr)]" : "lg:grid-cols-[3fr_2fr]"}`}>
                 <div>
-                  <div className="flex flex-wrap items-end gap-3">
-                    <Field label="Name"><input type="text" value={e.name} onChange={(ev) => patch(e.id, (x) => { x.name = ev.target.value; })} /></Field>
+                  <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
+                    <Field label="Name"><input type="text" className="w-36" value={e.name} onChange={(ev) => patch(e.id, (x) => { x.name = ev.target.value; })} /></Field>
                     <Field label="Engine">
                       <Select value={e.engine} options={Object.entries(catalog.engines).map(([k, v]) => ({ value: k, label: v.name }))}
                               onChange={(k) => patch(e.id, (x) => { const nd = catalog.engines[k]; x.engine = k; x.version = Object.keys(nd.versions)[0];
@@ -120,15 +125,20 @@ export default function EnginesPage() {
                       <Select value={e.version} options={versions.map((v) => ({ value: v, label: v }))}
                               onChange={(v) => patch(e.id, (x) => { x.version = v; x.args = {}; })} />
                     </Field>
-                    <Field label="Model">
-                      <Select value={e.model_id} options={models.map((m) => ({ value: m.id, label: m.name }))}
-                              onChange={(m) => patch(e.id, (x) => { x.model_id = m; })} />
-                    </Field>
-                    <button className="btn ml-auto border-red/40 text-red" onClick={() => remove(e.id)}>Remove engine</button>
+                    <div className="min-w-[14rem] flex-1">
+                      <Field label="Model">
+                        <Select className="w-full min-w-0 max-w-full truncate" value={e.model_id} options={models.map((m) => ({ value: m.id, label: m.name }))}
+                                onChange={(m) => patch(e.id, (x) => { x.model_id = m; })} />
+                      </Field>
+                    </div>
+                  </div>
+                  <div className="mt-1 flex items-center gap-3">
+                    <div className="min-w-0 flex-1 truncate text-xs text-muted" title={catalog.models.find((m) => m.id === e.model_id)?.note}>{catalog.models.find((m) => m.id === e.model_id)?.note}</div>
+                    <button className="shrink-0 rounded border border-red/40 px-2 py-0.5 text-xs text-red hover:bg-red-soft" onClick={() => remove(e.id)}>Remove engine</button>
                   </div>
 
                   {!hosted && (
-                    <div className="mt-4 flex flex-wrap items-end gap-3">
+                    <div className="mt-3 flex flex-wrap items-start gap-x-4 gap-y-2">
                       <div>
                         <label>GPUs</label>
                         <div className="mt-1 flex flex-wrap gap-1">
@@ -137,10 +147,11 @@ export default function EnginesPage() {
                             const on = e.gpus.includes(g.id); const other = usedGpus.get(g.id);
                             const spec = catalog.gpus.find((x) => x.id === g.model_id)!;
                             return (
-                              <button key={g.id} className={`chip border ${on ? "bg-mask text-white border-mask" : "border-line bg-paper"}`}
-                                      title={`${spec.name}${other ? ` · also used by ${other}` : ""}`}
+                              <button key={g.id} className={`chip border ${on ? "bg-mask text-white border-mask" : other ? "border-line bg-paper opacity-40 cursor-not-allowed line-through" : "border-line bg-paper"}`}
+                                      disabled={Boolean(other) && !on} aria-disabled={Boolean(other) && !on}
+                                      title={`${spec.name}${other ? ` · used by ${other}: one engine per card (sharing is out of scope)` : ""}`}
                                       onClick={() => patch(e.id, (x) => { x.gpus = on ? x.gpus.filter((y) => y !== g.id) : [...x.gpus, g.id]; })}>
-                                {g.id}{other ? "*" : ""}
+                                {g.id}
                               </button>
                             );
                           })}
@@ -152,8 +163,8 @@ export default function EnginesPage() {
                                   onChange={(c) => patch(e.id, (x) => { x.cpu = c; })} />
                         </Field>
                       )}
-                      <Field label="CPU cores" hint={`${cpuSpec(e.cpu).cores} on CPU ${e.cpu + 1}`}>
-                        <NumInput min={1} max={cpuSpec(e.cpu).cores} value={e.cpu_cores} className="w-20"
+                      <Field label={`CPU cores · ${coresLeft(e)} of ${cpuSpec(e.cpu).cores} free`}>
+                        <NumInput min={1} max={Math.max(1, coresLeft(e))} value={e.cpu_cores} className="w-20"
                                   onChange={(n) => patch(e.id, (x) => { x.cpu_cores = n ?? 1; })} />
                       </Field>
                       <Field label="Model storage">
@@ -163,8 +174,8 @@ export default function EnginesPage() {
                     </div>
                   )}
 
-                  <div className="mt-4 grid gap-x-4 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
-                    {args.map((a) => <ArgField key={a.name} dense={side(e)} a={a} value={e.args[a.name]} state={d?.arg_states?.[a.name]}
+                  <div className="mt-3 grid gap-x-4 gap-y-2.5 sm:grid-cols-2 lg:grid-cols-3">
+                    {args.map((a) => <ArgField key={a.name} dense={side(e)} a={packArg(a, catalog.models.find((m) => m.id === e.model_id)?.quants)} value={e.args[a.name]} state={d?.arg_states?.[a.name]}
                                                onChange={(v) => patch(e.id, (x) => { x.args = { ...x.args, [a.name]: v }; })} />)}
                   </div>
                   {e.engine === "strata" && d?.layout && !side(e) && (
@@ -172,8 +183,8 @@ export default function EnginesPage() {
                                   onFixed={(f) => patch(e.id, (x) => { x.fixed = f; })} />
                   )}
                   {(community[e.id] ?? []).length > 0 && !hosted && (
-                    <div className="mt-4 rounded border border-mask/40 bg-mask-soft/40 p-3 text-sm">
-                      <div className="font-medium">{(community[e.id] ?? [])[0]?.near ? "Nearest community measurements (not this exact configuration)" : "Community measurements for this configuration"}</div>
+                    <details open={!side(e)} className="mt-3 rounded border border-mask/40 bg-mask-soft/40 p-3 text-sm">
+                      <summary className="cursor-pointer font-medium">{(community[e.id] ?? [])[0]?.near ? "Nearest community measurements (not this exact configuration)" : "Community measurements for this configuration"}</summary>
                       <ul className="mt-1 flex flex-col gap-1">
                         {(community[e.id] ?? []).map((c, i) => (
                           <li key={i} className="flex flex-wrap items-center gap-x-3">
@@ -184,7 +195,7 @@ export default function EnginesPage() {
                           </li>
                         ))}
                       </ul>
-                    </div>
+                    </details>
                   )}
                   <details className="mt-4" open={Boolean(e.benchmarks && Object.values(e.benchmarks).some((v) => v))}>
                     <summary className="cursor-pointer text-sm text-muted">Measured on real hardware (overrides the derived speeds for this configuration)</summary>
@@ -210,17 +221,13 @@ export default function EnginesPage() {
                   </details>
                 </div>
 
-                <div className={side(e) ? "sticky top-4 flex flex-col gap-3 self-start" : undefined}>
-                {side(e) && d?.layout && (
-                  <StrataLayout compact layout={d.layout} hitGuessed={d.layout.hit_guessed} fixed={e.fixed ?? {}}
-                                onFixed={(f) => patch(e.id, (x) => { x.fixed = f; })} />
-                )}
-                <aside className="rounded border border-line bg-paper p-4 text-sm">
+                <div className={side(e) ? "sticky top-4 flex h-[calc(100vh-2rem)] flex-col gap-3 self-start" : undefined}>
+                <aside className={`rounded border border-line bg-paper text-sm ${side(e) ? "shrink-0 p-3" : "p-4"}`}>
                   {!d ? <span className="text-muted">Calculating…</span> : d.errors.length ? (
                     <ul className="text-red">{d.errors.map((x, i) => <li key={i}>{x}</li>)}</ul>
                   ) : (
                     <>
-                      <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+                      <div className={side(e) ? "grid grid-cols-[auto_1fr_auto_1fr] gap-x-3 gap-y-0.5" : "grid grid-cols-2 gap-x-3 gap-y-1"}>
                         <span className="text-muted">reads prompts</span><span>{Math.round(d.prefill_rate).toLocaleString()} tok/s</span>
                         <span className="text-muted">writes, alone</span><span>{d.decode_total["1"]?.toFixed(0)} tok/s</span>
                         {Object.entries(d.decode_total).filter(([k]) => k !== "1").slice(0, 4).map(([k, v]) => (
@@ -239,6 +246,10 @@ export default function EnginesPage() {
                     </>
                   )}
                 </aside>
+                {side(e) && d?.layout && (
+                  <StrataLayout compact layout={d.layout} hitGuessed={d.layout.hit_guessed} fixed={e.fixed ?? {}}
+                                onFixed={(f) => patch(e.id, (x) => { x.fixed = f; })} />
+                )}
                 </div>
               </div>
             </section>
@@ -269,6 +280,13 @@ function useWide(query = "(min-width: 1500px)") {
   return wide;
 }
 
+/** The pack (quantization) field offers only the packs the chosen model comes in. */
+function packArg(a: ArgDef, packs?: string[]): ArgDef {
+  if (a.name !== "quantization" || !packs?.length || !a.options) return a;
+  const options = a.options.filter((o) => packs.includes(o));
+  return { ...a, options: options.length ? options : a.options, default: packs[0], help: packs.length === 1 ? "the only pack this model comes in" : a.help };
+}
+
 type ArgState = { disabled: boolean; force: unknown; reason: string };
 
 /** One argument. `state` comes from the rules the engine itself applies: a greyed-out field has no effect in this
@@ -278,17 +296,14 @@ function ArgField({ a, value, state, onChange, dense = false }: { a: ArgDef; val
   const v = forced ? state!.force : (value ?? a.default);
   const off = Boolean(state?.disabled);
   const hint = state?.reason ? <span className={off || forced ? "text-amber" : undefined}>{state.reason}{forced ? ` → ${String(state!.force)}` : ""}</span>
-    : dense ? <span className="line-clamp-2" title={a.help}>{a.help}</span> : a.help;
+    : <span className={dense ? "line-clamp-2" : undefined} title={a.help}>{a.help}</span>;
   const wrap = (child: ReactNode) => (
     <Field label={a.name} hint={hint}>
       <div className={off ? "opacity-50" : undefined}>{child}</div>
     </Field>
   );
-  if (a.type === "bool") return (
-    <label className={`flex items-center gap-2 text-sm text-ink ${off ? "opacity-50" : ""}`} title={state?.reason || a.help}>
-      <input type="checkbox" aria-label={a.name} checked={Boolean(v)} disabled={off || forced} onChange={(e) => onChange(e.target.checked)} />{a.name}
-      {state?.reason ? <span className="text-xs text-amber">{state.reason}</span> : null}
-    </label>
+  if (a.type === "bool") return wrap(
+    <input type="checkbox" className="h-4 w-4" aria-label={a.name} checked={Boolean(v)} disabled={off || forced} onChange={(e) => onChange(e.target.checked)} />
   );
   if (a.type === "choice") return wrap(
     <Select ariaLabel={a.name} disabled={off || forced} value={String(v)} options={(a.options ?? []).map((o) => ({ value: o, label: o }))} onChange={onChange} />

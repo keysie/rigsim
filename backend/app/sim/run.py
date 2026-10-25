@@ -120,13 +120,16 @@ def simulate(req: SimRequest) -> dict:
     warnings = list(info["warnings"]) + [f"workload: {n}" for n in getattr(req.workload, "notes", [])]
     names = {e.id: (e.name or e.id) for e in req.engines}
     for g, u in shared.items():
-        used = sum(float(perfs[e].memory.get(g, {}).get("used_gb", 0)) for e in u)
-        vram = float(info["_devices"][g]["spec"]["vram_gb"])
-        if used > vram:
-            out["errors"].append(f"{g}: {', '.join(names[e] for e in u)} need {used:.1f} GB together, the card has {vram:.0f} GB")
-        else:
-            warnings.append(f"{g} is shared by {', '.join(names[e] for e in u)} ({used:.1f} of {vram:.0f} GB): "
-                            "their kernels compete; the simulator sums the utilisation but does not slow either engine")
+        out["errors"].append(f"{g} is assigned to {', '.join(names[e] for e in u)}: one engine per card — sharing a GPU is out of scope")
+    by_cpu: dict = {}
+    for e in req.engines:
+        if e.engine != "hosted-api" and not perfs[e.id].errors:
+            by_cpu.setdefault(e.cpu, []).append(e)
+    for ci, es in by_cpu.items():
+        total = sum(int(e.cpu_cores or 0) for e in es)
+        have = int(info["cpus"].get(ci, info["cpus"].get(str(ci), {})).get("cores", 0) or 0)
+        if have and total > have:
+            out["errors"].append(f"CPU {ci + 1}: {', '.join(names[e.id] for e in es)} ask for {total} cores together, the CPU has {have} — cores are not shared")
     if out["errors"]:
         out["warnings"] = warnings
         return out

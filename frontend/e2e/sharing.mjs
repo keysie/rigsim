@@ -1,0 +1,27 @@
+// Out of scope by decision: two engines on one card, or more cores than the CPU has. The UI blocks both.
+import { chromium } from "playwright-core";
+const BASE = process.argv[2] ?? "http://127.0.0.1:8090/";
+const browser = await chromium.launch({ executablePath: process.env.CHROMIUM, args: ["--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage", "--headless=new"] });
+const page = await (await browser.newContext({ viewport: { width: 1400, height: 1000 } })).newPage();
+const errors = []; page.on("pageerror", (e) => errors.push(e.message));
+let step = 0; const ok = (c, w) => { step++; console.log(`${c ? "ok  " : "FAIL"} ${step} ${w}`); if (!c) { console.log(errors); process.exit(1); } };
+await page.goto(BASE); await page.waitForSelector("nav", { timeout: 120000 });
+page.once("dialog", (d) => d.accept()); await page.getByRole("button", { name: "Start over" }).click(); await page.waitForTimeout(500);
+await page.goto(BASE + "#engines"); await page.reload(); await page.waitForSelector("text=writes, alone", { timeout: 120000 }); await page.waitForTimeout(1500);
+const strata = page.locator("section", { has: page.locator('input[value="Strata maker"]') });
+const vllm = page.locator("section", { has: page.locator('input[value="vLLM 27B"]') });
+ok((await page.locator(".text-red").filter({ hasText: /one engine per card|cores are not shared/ }).count()) === 0, "the example engines share nothing");
+const chip3 = strata.getByRole("button", { name: "gpu-3" });
+ok(await chip3.isDisabled(), "a card used by another engine cannot be picked on the Strata card");
+ok(/used by vLLM 27B: one engine per card/.test(await chip3.getAttribute("title")), "...and the chip says who has it");
+await strata.getByRole("button", { name: "gpu-2" }).click(); await page.waitForTimeout(1200);
+ok(!(await vllm.getByRole("button", { name: "gpu-2" }).isDisabled()), "a card freed by one engine becomes available to another");
+await strata.getByRole("button", { name: "gpu-2" }).click(); await page.waitForTimeout(800);
+const cores = strata.getByLabel(/CPU cores/).or(strata.locator('label:has-text("CPU cores") input'));
+const coresIn = strata.locator('input[type="number"]').first();
+await coresIn.fill("10"); await page.waitForTimeout(300); await page.getByRole("heading", { name: "Engines" }).click(); await page.waitForTimeout(800);
+const v = Number(await coresIn.inputValue());
+ok(v < 10, `cores are capped at what other engines leave on the CPU (asked 10, got ${v})`);
+ok((await strata.getByText(/CPU cores · \d+ of \d+ free/).count()) === 1, "the cores label says how many are left");
+ok(errors.length === 0, "no uncaught page errors");
+await browser.close(); console.log(`all ${step} sharing checks passed`);

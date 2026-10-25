@@ -67,8 +67,11 @@ class EnginePerf:
         return d
 
 
-def _bpw(args, default):
-    return QUANTS.get(str(args.get("quantization", default)), QUANTS[default])
+def _bpw(args, default, model=None):
+    q = str(args.get("quantization", default))
+    if model and q in (model.get("quant_bpw") or {}):
+        return float(model["quant_bpw"][q])
+    return QUANTS.get(q, QUANTS[default])
 
 
 def _gpus(spec, machine_info):
@@ -284,7 +287,7 @@ def _strata(p, args, model, gpus, cpu, info):
         p.notes.append(f"peer-device: {len(gpus) - 1} card(s) as expert tier, {peer_cache_gb:.0f} GB behind the PCIe link")
         gpus = gpus[:1]
         args["_peer_cache_gb"] = peer_cache_gb
-    bpw = _bpw(args, "iq3_s")
+    bpw = _bpw(args, "iq3_s", model)
     slots = int(args["batch"])
     ctx = int(args["context"])
     dense_gb = model["params_b"] * (1 - model["expert_share"]) * bpw / 8
@@ -321,12 +324,26 @@ def _strata(p, args, model, gpus, cpu, info):
     cores = max(1, min(cpu["cores"], int(args["_cores"])))
     pw = int(args.get("pool_workers", 0) or 0)
     cpu_stream = _cpu_stream(cpu, min(cores, pw) if pw else cores)
+    ssd_in_ram, ssd_bw, experts_on_ssd_gb = 1.0, 0.0, 0.0
+    if model.get("ssd_stream"):
+        # Unsloth packs: Strata keeps RAM minus 24 GB of the experts in host RAM and reads the rest from the SSD
+        ram_budget_gb = max(0.0, cpu["ram_gb"] - 24.0)
+        ssd_in_ram = min(1.0, ram_budget_gb / experts_gb) if experts_gb else 1.0
+        experts_on_ssd_gb = max(0.0, experts_gb - ram_budget_gb)
+        ssd = info["_devices"].get(getattr(_SPEC.get(), "storage", None) or "", {})
+        ssd_bw = float(ssd.get("link_bw_gbs", 0) or 0) if ssd else 0.0
+        if ssd_in_ram < 1.0 and ssd_bw <= 0:
+            p.errors.append(f"{experts_on_ssd_gb:.0f} GB of experts exceed the RAM budget (RAM minus 24 GB) and no model storage is assigned to read them from")
+        elif ssd_in_ram < 1.0:
+            p.notes.append(f"{(1 - ssd_in_ram) * 100:.0f} % of the expert pack lives on the SSD ({ssd_bw:.1f} GB/s): misses that fall there are slow")
     if str(args.get("aux_cpus", "auto")) == "off":
         cpu_stream *= 0.85          # 0.2.2: without the auxiliary CPU helpers the expert path loses its overlap
     pcie_bw = min(g["link_bw_gbs"] for g in gpus) * (0.7 if cpu.get("os") == "windows" else 1.0)
     pcie_miss_bw = pcie_bw * PCIE_SMALL_COPY_EFF        # expert misses are many small copies
     miss_bw = max(cpu_stream, pcie_miss_bw) if args.get("pcie_frac", "auto") == "auto" else (
         pcie_miss_bw if str(args["pcie_frac"]) == "1" else cpu_stream)
+    if ssd_in_ram < 1.0 and ssd_bw > 0:
+        miss_bw = 1.0 / (ssd_in_ram / miss_bw + (1 - ssd_in_ram) / min(ssd_bw * 0.8, miss_bw))   # misses on the SSD wait for it
     mtp = bool(args.get("mtp", True)) and model["mtp"]
     groups = str(args.get("batch_groups", "auto"))
     vendor_nv = all(g["spec"]["vendor"] == "NVIDIA" for g in gpus)
@@ -351,13 +368,14 @@ def _strata(p, args, model, gpus, cpu, info):
     if kv_cells < ctx:
         p.notes.append(f"KV streaming: beyond {kv_cells // 1024}K tokens a slot's K/V lives in host RAM and crosses the link every window")
 
-    def window_time(rows: int, drafts: bool) -> float:
-        """Seconds for one verify window over all cards with `rows` rows."""
+    def window_time(rows: int, drafts: bool, hit_: float | None = None) -> float:
+        """Seconds for one verify window over all cards with `rows` rows (hit_=1.0: as if every expert were resident)."""
+        h = hit if hit_ is None else hit_
         t = 0.0
         for bw in gpu_bw:
             t += (active_dense_gb / n_cards) / bw
-            t += (active_expert_gb / n_cards) * rows * hit / bw
-        t += active_expert_gb * rows * (1 - hit) / miss_bw
+            t += (active_expert_gb / n_cards) * rows * h / bw
+        t += active_expert_gb * rows * (1 - h) / miss_bw
         if kv_streamed_gb > 0:
             # KV streaming: every window re-reads each slot's non-resident K/V over the link; this is what makes a
             # 128K context fit in VRAM and also what caps its speed
@@ -371,6 +389,8 @@ def _strata(p, args, model, gpus, cpu, info):
     solo_rows = 4 if mtp else 1
     d = {}
     d[1] = (MTP_TOKENS_PER_WINDOW if mtp else 1.0) / window_time(solo_rows, mtp)
+    # what the cards alone could do with every expert resident: the demand the expert path has to keep up with
+    card_bound = {n: (n if n > 1 else 1) * (MTP_TOKENS_PER_WINDOW if (mtp and n == 1) else 1.0) / window_time(solo_rows if n == 1 else n, mtp and n == 1, hit_=1.0) for n in range(1, slots + 1)}
     for n in range(2, slots + 1):
         if pipelined:
             rows = max(1, n // ngroups)
@@ -383,6 +403,9 @@ def _strata(p, args, model, gpus, cpu, info):
             d[n] = n * BATCH_MTP_TOKENS_PER_ROW / window_time(2 * n, True)
         else:
             d[n] = n / window_time(n, False)
+    sf = float(model.get("speed_factor", 1.0) or 1.0)
+    if sf != 1.0:
+        d = {n: v * sf for n, v in d.items()}
     p.decode_total = d
     p.speed_per_request = {n: v / n for n, v in d.items()}
     p.slots = slots
@@ -405,14 +428,19 @@ def _strata(p, args, model, gpus, cpu, info):
         p.layout = layout_mod.strata_layout(spec=_SPEC.get(), args=args, model=model, gpus=gpus, cpu=cpu, info=info, dense_gb=dense_gb,
                                             experts_gb=experts_gb, kv_gb_per_slot=kv_gb_per_slot, kv_cells=kv_cells, ctx=ctx, slots=slots,
                                             trim=trim, cache_per_card=cache_per_card, held=held, hit=hit, decode_total=p.decode_total,
-                                            prefill_rate=p.prefill_rate, pcie_bw=pcie_bw)
+                                            prefill_rate=p.prefill_rate, pcie_bw=pcie_bw, tps_card_bound=max(card_bound.values()),
+                                            cpu_stream=cpu_stream,
+                                            miss_via_pcie=(miss_bw == pcie_miss_bw and pcie_miss_bw > cpu_stream) or str(args.get("pcie_frac", "auto")) == "1")
     except Exception as e:  # noqa: BLE001 - the layout is an aid; never break the derivation for it
         p.notes.append(f"layout not available: {type(e).__name__}: {e}")
     p.memory["expert_cache_gb"] = round(cache_total, 1)
+    if model.get("ssd_stream"):
+        p.memory["experts_on_ssd_gb"] = round(experts_on_ssd_gb, 1)
     p.memory["experts_total_gb"] = round(experts_gb, 1)
     p.memory["held"] = round(held, 2)
     p.memory["hit"] = round(hit, 2)
-    p.memory["host_ram_gb"] = round(experts_gb * 1.05 + int(args.get("parking_mib", 0) or 0) / 1024, 1)
+    experts_in_ram_gb = experts_gb - experts_on_ssd_gb if model.get("ssd_stream") else experts_gb
+    p.memory["host_ram_gb"] = round(experts_in_ram_gb * 1.05 + int(args.get("parking_mib", 0) or 0) / 1024, 1)
     if p.memory["host_ram_gb"] > cpu["ram_gb"]:
         p.errors.append(f"needs ~{p.memory['host_ram_gb']} GB host RAM for the experts, CPU {cpu['name']} pool has {cpu['ram_gb']} GB")
     t1 = window_time(solo_rows, mtp)

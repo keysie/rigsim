@@ -34,7 +34,10 @@ no server, no accounts, nothing is sent anywhere. Configurations can be saved an
    Mac Pro M2 Ultra, Framework Desktop (Strix Halo) or a typical desktop; everything stays editable, so a
    Spark with an eGPU on its TB4 port is two clicks. Unified-memory machines model the iGPU as sharing the
    pool's bandwidth. The lane budget and all bandwidths update with every change.
-2. **Engines** — one model per engine. Strata, vLLM, llama.cpp and a hosted API, with versions that define the
+2. **Engines** — one model per engine. Strata serves every Flash-Next pack its docs list: the original
+   (IQ3_S / IQ3_XXS / IQ2_XS / Q2_0), Swift 1.5, the Coder (256 experts, IQ1_M), the Unsloth UD packs (IQ4_XS /
+   Q4_K_XL / Q6_K_XL, whose experts beyond RAM minus 24 GB are read from the model SSD) and the OrcaRouter
+   IQ3_XXS; the pack field offers only what the chosen model comes in. Strata, vLLM, llama.cpp and a hosted API, with versions that define the
    arguments. Assign GPUs, a CPU, cores and a model SSD. Beside each engine: prompt-reading rate, writing rate
    alone and with several requests, expert-cache hit, KV room, VRAM per card, and why something does not fit.
    Measured values can be entered and override the derived ones. Arguments follow the rules the engines
@@ -93,7 +96,7 @@ Forty-one further points were **held out**: more cells from the same machine, St
 on 3090 / 4090), and across the prebuilts: M1 Ultra, M3 Ultra, M4 Max, M5 Max and M5 Ultra in other
 formats and in prompt processing (llama.cpp discussion #4167), Strix Halo prompt processing and a 27B dense
 model with and without MTP plus the RX 7900 XTX (ROCm scoreboard #15021), and the Spark's prompt rate
-(#16578). Result: 17 of 17 calibration points and 38 of 41 held-out points within ±30 %, median error
+(#16578). Result: 18 of 18 calibration points and 40 of 43 held-out points within ±30 %, median error
 8 % and 14 %, worst held-out miss 37 %. `backend/tests/test_validation.py` keeps the model inside those
 bounds; the *Calibration data* page recomputes the whole table from the current code.
 
@@ -102,11 +105,20 @@ task in fewer turns and fewer retries, so the same hardware yields more tasks pe
 simulator cannot know that from the hardware, which is why the levers exist and why the machine-level
 tokens per second, watts and utilisation are the numbers to compare machines by.
 
+**Explicitly out of scope: sharing a card or the CPU's cores between engines.** Every GPU holds exactly one
+engine, and the engines on a CPU cannot ask for more cores together than it has; the interface refuses both
+and the model reports them as errors. Two engines on one card interact through kernel scheduling, memory
+contention, VRAM fragmentation and each engine's own reservation logic (Strata's `--vram-reserve-later-mib`,
+vLLM's `gpu_memory_utilization`, a desktop compositor on the side) — a space of details with no end, where
+every number would be a guess that no measurement set could validate. The reference machine itself shares a
+card between its judge and its guard; the example configuration therefore leaves the judge role empty rather
+than pretend. If you need that layout, measure it.
+
 What this does **not** cover: models other than the ones in the catalog (sizes are spec-sheet figures and
 parameter counts, not measurements), GPUs the reports did not include (spec-sheet bandwidth with the same
 efficiency constants), the power-cap curve beyond one card and one cap (the box's 3090s at 250 W; the
 curve's shape is a guess until capped measurement records arrive), Strata on unified memory (no public measurement exists; the CPU expert path on NEON
-is a guess), two engines sharing a card (VRAM and utilisation are summed, neither is slowed),
+is a guess),
 chipset lanes and slot spacing, thermals and power limits, answer quality. The workload ranges on the roles
 page are assumptions until real traces replace them. See `docs/predictions/` for numbers written down before
 a benchmark pass, to be scored against it.
