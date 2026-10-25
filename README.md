@@ -115,7 +115,7 @@ What this does **not** cover: models other than the ones in the catalog (sizes a
 parameter counts, not measurements), GPUs the reports did not include (spec-sheet bandwidth with the same
 efficiency constants), the power-cap curve beyond one card and one cap (the box's 3090s at 250 W; the
 curve's shape is a guess until capped measurement records arrive), Strata on unified memory (no public measurement exists; the CPU expert path on NEON
-is a guess), two engines sharing a card (VRAM and utilisation are summed, neither is slowed),
+is a guess),
 chipset lanes and slot spacing, thermals and power limits, answer quality. The workload ranges on the roles
 page are assumptions until real traces replace them. See `docs/predictions/` for numbers written down before
 a benchmark pass, to be scored against it.
