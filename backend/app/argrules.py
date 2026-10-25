@@ -45,12 +45,13 @@ def evaluate(engine: str, version: str, args: dict, n_gpus: int, gpu_specs: list
         multi = n_gpus >= 2
         mode = str(a.get("multi_gpu", "layer-split"))
         if not multi:
-            for name in ("multi_gpu", "batch_groups", "pipeline_windows", "trim_stage_weights"):
+            for name in ("multi_gpu", "batch_groups", "pipeline_windows", "trim_stage_weights", "layer_split"):
                 _state(s, name, disabled=True, reason="needs two or more GPUs")
         if multi and mode == "peer-device":
             _state(s, "batch_groups", disabled=True, reason="a layer split only; the peer tier runs the model on the first card")
             _state(s, "pipeline_windows", disabled=True, reason="does not combine with --peer-device")
             _state(s, "trim_stage_weights", disabled=True, reason="only with an explicit --layer-split")
+            _state(s, "layer_split", disabled=True, reason="peer-device does not split layers")
         if not model.get("mtp", False):
             _state(s, "mtp", disabled=True, force=False, reason="this model has no MTP head")
             _state(s, "batch_mtp", disabled=True, force=(False if version == "0.1.43.1" else "off"), reason="this model has no MTP head")

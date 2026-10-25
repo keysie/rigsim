@@ -230,9 +230,11 @@ export default function EnginesPage() {
                       <div className={side(e) ? "grid grid-cols-[auto_1fr_auto_1fr] gap-x-3 gap-y-0.5" : "grid grid-cols-2 gap-x-3 gap-y-1"}>
                         <span className="text-muted">reads prompts</span><span>{Math.round(d.prefill_rate).toLocaleString()} tok/s</span>
                         <span className="text-muted">writes, alone</span><span>{d.decode_total["1"]?.toFixed(0)} tok/s</span>
+                        {typeof d.memory.decode_1_at_32k === "number" && <><span className="text-muted">writes, 32K deep</span><span>{(d.memory.decode_1_at_32k as number).toFixed(0)} tok/s</span></>}
+                        {typeof d.memory.followup_2k_s === "number" && <><span className="text-muted">2K follow-up</span><span>~{(d.memory.followup_2k_s as number).toFixed(1)} s to read</span></>}
                         {typeof d.memory.full_prompt_s === "number" && <><span className="text-muted">full {Math.round((d.memory.full_prompt_tokens as number) / 1024)}K prompt</span><span>~{(d.memory.full_prompt_s as number) < 120 ? `${(d.memory.full_prompt_s as number).toFixed(0)} s` : `${((d.memory.full_prompt_s as number) / 60).toFixed(1)} min`} to read</span></>}
                         {speedRows(d.decode_total, Number(e.args.batch ?? e.args.parallel ?? e.args.max_num_seqs ?? 1)).map(([k, v, configured]) => (
-                          <><span key={`l${k}`} className={configured ? "font-medium" : "text-muted"}>writes, {k} at once{configured ? " (set)" : ""}</span><span key={`v${k}`} className={configured ? "font-medium" : undefined}>{v.toFixed(0)} tok/s total · {(v / Number(k)).toFixed(0)} each</span></>
+                          <><span key={`l${k}`} className={configured ? "font-medium" : "text-muted"} title="while all of them write; prompt reads pause them (see the note below)">writes, {k} at once{configured ? " (set)" : ""}</span><span key={`v${k}`} className={configured ? "font-medium" : undefined}>{v.toFixed(0)} tok/s total · {(v / Number(k)).toFixed(0)} each</span></>
                         ))}
                         {typeof d.memory.hit === "number" && <><span className="text-muted">expert cache</span><span>{(d.memory.held as number * 100).toFixed(0)} % held, {(d.memory.hit as number * 100).toFixed(0)} % hits</span></>}
                         {typeof d.memory.kv_room_tokens === "number" && <><span className="text-muted">KV room</span><span>{Math.round((d.memory.kv_room_tokens as number) / 1000)}K tokens</span></>}

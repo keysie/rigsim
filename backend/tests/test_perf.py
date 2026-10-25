@@ -30,12 +30,43 @@ def test_strata_one_card_matches_pass_2():
     assert 0.8 <= p.memory["hit"] <= 0.95
 
 
-def test_strata_split_matches_pass_1():
+def test_strata_split_matches_the_raw_requests():
     p = strata(["gpu-1", "gpu-2"], batch=4)
     assert not p.errors
-    near(p.decode_total[1], 125)         # 105-135 tok/s
-    near(p.decode_total[4], 175)         # ~175 tok/s total with 4 slots
-    near(p.prefill_rate, 3300, 0.35)     # ~3,300 tok/s shared
+    near(p.decode_total[1], 136)                 # pass 4: 124-136 tok/s, one stream
+    near(p.decode_at(4, 2200), 118)              # pass 1: 29.5 tok/s per answer x 4 (the 'steady' 175 was overstated)
+    near(91229 / p.prompt_seconds(91229), 3195)  # pass 4: a 91K prompt alone
+
+
+def test_strata_short_prompts_pay_the_chunk_floor():
+    """pass 2, one card: a 1,257-token follow-up took 3.47 s, a 7,430-token one 4.30 s, a 45-token one 0.63 s."""
+    p = strata(["gpu-1"], batch=1)
+    near(p.prompt_seconds(1257), 3.47)
+    near(p.prompt_seconds(7430), 4.30)
+    assert p.prompt_seconds(45) < 1.0
+    assert p.prompt_seconds(1257) > 3 * 1257 / p.prefill_rate      # far above the long-prompt rate
+
+
+def test_strata_writes_almost_nothing_while_reading_with_two_groups():
+    two = strata(["gpu-1", "gpu-2"], batch=8)
+    serial = strata(["gpu-1", "gpu-2"], batch=8, batch_groups="1")
+    assert two.read_decode_factor < 0.1 < serial.read_decode_factor
+
+
+def test_strata_decode_follows_the_measured_power_curve():
+    from app.perf import _strata_power_decode as f
+    assert abs(f(220 / 350) / f(300 / 350) - 89.3 / 103.5) < 0.02 and abs(f(250 / 350) / f(300 / 350) - 98.6 / 103.5) < 0.02
+
+
+def test_strata_deeper_conversations_write_slower():
+    p = strata(["gpu-1"], batch=1)
+    assert 0.8 < p.decode_at(1, 43000) / p.decode_at(1, 4096) < 0.95       # pass 2: ~96 -> ~85
+
+
+def test_strata_layer_split_balance():
+    base = strata(["gpu-1", "gpu-2"], batch=8)
+    s24 = strata(["gpu-1", "gpu-2"], batch=8, layer_split=24)
+    assert 1.1 < s24.decode_total[8] / base.decode_total[8] < 1.25            # pass 6: +18 % at 24 vs auto (28)
 
 
 def test_strata_three_cards_prefill():

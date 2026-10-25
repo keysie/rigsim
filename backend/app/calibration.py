@@ -19,9 +19,9 @@ def machine(cpu, ram_gb, mts, ch, gpus, gen=4, widths=None, os="linux", power=No
                                      for i, (g, w, pw) in enumerate(zip(gpus, widths, power))]))
 
 
-def strata(info, n, cores, **args):
+def strata(info, n, cores, gpus=None, **args):
     return derive(EngineSpec(id="s", engine="strata", version="0.1.43.1", model_id="qwen3.8-flash-next",
-                             gpus=[f"gpu-{i + 1}" for i in range(n)], cpu_cores=cores, args=args), info)
+                             gpus=gpus or [f"gpu-{i + 1}" for i in range(n)], cpu_cores=cores, args=args), info)
 
 
 def llama(info, model, quant, **args):
@@ -36,7 +36,7 @@ def vllm(info, model, gpus, **args):
 
 STRATA = "https://github.com/Niko1221/Strata/tree/main/bench/results/"
 SOURCES = {
-    "box": dict(name="<keysie>", url=None, note="Bench passes 1–4 on the owner's box: i9-10900X, 4-ch DDR4-3200, 3 x RTX 3090 "
+    "box": dict(name="<keysie>", url=None, note="Bench passes 1–6 on the owner's box (raw requests and traces; 250 W, passes 5–6 at 220 W): i9-10900X, 4-ch DDR4-3200, 3 x RTX 3090 "
                 "(x16/x16/x8, power-limited to 250 W) + RTX 3060 (x4), Strata 0.1.43.1, vLLM 0.31.0, llama.cpp b11552, Linux."),
     "strata-3060": dict(name="Strata community report: RTX 3060 12 GB, Core i7-12700, 64 GB DDR4 (Windows)",
                         url=STRATA + "2026-10-09-community-rtx-3060-0141", note="Strata 0.1.41, four quants, 128→260K prompt sweep, MTP on/off."),
@@ -84,14 +84,48 @@ def run():
     # --- the owner's box: i9-10900X, 4-ch DDR4-3200, 3 x 3090 (x16/x16/x8), 3060 x4 ----------------
     box = machine("i9-10900x", 128, 3200, 4, ["rtx-3090", "rtx-3090", "rtx-3090", "rtx-3060-12g"], 3, [16, 16, 8, 4],
                   power=[250, 250, 250, None])      # the 3090s run power-limited to 250 W
+    # Strata on the box, from the raw requests of passes 2-6 (docs/bench-data in the AI-SERVER repository). Decode
+    # figures are one stream's tokens / (last - first token); prompt figures are engine reads of one request alone
+    # (no queue); several-slot figures are counted from the per-slot token counters while every slot writes.
+    def at(watts):
+        return machine("i9-10900x", 128, 3200, 4, ["rtx-3090", "rtx-3090", "rtx-3090", "rtx-3060-12g"], 3, [16, 16, 8, 4],
+                       power=[watts, watts, watts, None])
+    def rate(e, n):
+        return n / e.prompt_seconds(n)
     p = strata(box, 1, 9, batch=1)
-    add("CAL", "box: Strata 1x3090 IQ3_S decode", p.decode_total[1], 95)
-    add("CAL", "box: Strata 1x3090 prompt tok/s", p.prefill_rate, 1900)
+    add("CAL", "box: Strata 1x3090 decode, one stream (passes 3/4, 250 W)", p.decode_total[1], 97.5)
+    add("CAL", "box: Strata 1x3090 long first read tok/s (passes 2-4, 78-183K)", rate(p, 95000), 1880)
+    add("CAL", "box: Strata 1x3090 1,257-token follow-up, s (pass 2)", p.prompt_seconds(1257), 3.47)
+    add("CAL", "box: Strata 1x3090 7,430-token follow-up, s (pass 2)", p.prompt_seconds(7430), 4.30)
+    add("CAL", "box: Strata 1x3090 45-token follow-up, s (pass 2)", p.prompt_seconds(45), 0.63)
+    add("VAL", "box: Strata 1x3090 2,621-token follow-up, s (pass 2)", p.prompt_seconds(2621), 3.68)
+    add("VAL", "box: Strata 1x3090 4,138-token follow-up, s (pass 2)", p.prompt_seconds(4138), 3.96)
+    add("CAL", "box: Strata 1x3090 decode at ~43K deep (pass 2 grow, turns 6-10)", p.decode_at(1, 43000), 84.8)
+    add("VAL", "box: Strata 1x3090 long read, prefill chunk 4K (pass 3)", rate(strata(box, 1, 9, batch=1, prefill_chunk=4096), 98000), 1153)
+    add("VAL", "box: Strata 1x3090 long read, prefill chunk 16K (pass 3)", rate(strata(box, 1, 9, batch=1, prefill_chunk=16384), 103000), 2145)
+    add("VAL", "box: Strata 1x3090 long read, prefill chunk 32K (pass 3)", rate(strata(box, 1, 9, batch=1, prefill_chunk=32768), 88000), 2226)
+    add("CAL", "box: Strata 1x3090 decode at 300 W (pass 3)", strata(at(300), 1, 9, batch=1).decode_total[1], 103.5)
+    add("CAL", "box: Strata 1x3090 decode at 220 W (pass 3)", strata(at(220), 1, 9, batch=1).decode_total[1], 89.3)
+    bl = strata(at(220), 1, 7, gpus=["gpu-3"], batch=1, context=131072)
+    add("VAL", "box: Strata on the Blower (x8, 220 W) decode (pass 5)", bl.decode_total[1], 80.4)
+    add("VAL", "box: Strata on the Blower (x8, 220 W) long read tok/s (pass 5)", rate(bl, 96000), 1761)
     p2 = strata(box, 2, 9, batch=4)
-    add("CAL", "box: Strata 2x3090 decode, 1 slot", p2.decode_total[1], 125)
-    add("CAL", "box: Strata 2x3090 decode, 4 slots total", p2.decode_total[4], 175)
-    add("CAL", "box: Strata 2x3090 prompt tok/s", p2.prefill_rate, 3300)
-    add("VAL", "box: Strata 2x3090 115K prompt, seconds", 115000 / p2.prefill_rate + p2.prefill_quad * 115000 ** 2 / 2 + 0.7, 35)
+    p21 = strata(box, 2, 9, batch=1)
+    add("CAL", "box: Strata 2x3090 decode, one stream (pass 4, 250 W)", p21.decode_total[1], 135.9)
+    add("CAL", "box: Strata 2x3090 long first read tok/s (pass 4, 91K)", rate(p21, 91229), 3195)
+    add("VAL", "box: Strata 2x3090 111K prompt, seconds (pass 4)", p21.prompt_seconds(111123), 33.98)
+    add("VAL", "box: Strata 2x3090 1,756-token prompt, seconds (pass 1)", p2.prompt_seconds(1756), 1.84)
+    add("VAL", "box: Strata 2x3090 4 slots writing, ~2K deep (pass 1: per answer 29.5 x 4)", p2.decode_at(4, 2200), 118)
+    def p6(**kw):
+        return strata(at(220), 2, 7, **{"batch": 8, "context": 131072, "kv_resident": 32768, **kw})
+    add("CAL", "box: pass 6, 8 slots, two groups, split 28 (auto), writing at ~36K", p6().decode_at(8, 36000), 116.9)
+    add("VAL", "box: pass 6, 8 slots, two groups, split 24, writing at ~36K", p6(layer_split=24).decode_at(8, 36000), 138.4)
+    add("VAL", "box: pass 6, 8 slots, two groups, split 20, writing at ~36K", p6(layer_split=20).decode_at(8, 36000), 116.2)
+    g1 = p6(batch_groups="1", batch_mtp=True)
+    add("CAL", "box: pass 6, 8 slots serial --batch-mtp, writing at ~22K", g1.decode_at(8, 22000), 129.3)
+    add("VAL", "box: pass 6, 4 slots serial --batch-mtp, writing at ~18K", p6(batch=4, batch_groups="1", batch_mtp=True).decode_at(4, 18000), 125.3)
+    add("CAL", "box: pass 6, two groups, writing while a prompt is read", p6().decode_at(8, 36000) / 3 * p6().read_decode_factor, 2.5)
+    add("CAL", "box: pass 6, serial, writing while a prompt is read", g1.decode_at(8, 22000) / 3 * g1.read_decode_factor, 18.0)
     p3 = strata(box, 3, 9, batch=1)
     add("VAL", "box: Strata 3x3090 prompt tok/s (+25 %)", p3.prefill_rate, 4000)
     v = vllm(box, "qwen3.8-27b", ["gpu-3"])
@@ -122,8 +156,8 @@ def run():
     add("VAL", "3060 + i7-12700: Q2_0 decode", strata(m, 1, 12, batch=1, quantization="q2_0").decode_total[1], 43, "strata-3060")
     add("VAL", "3060 + i7-12700: Q2_0 prompt tok/s (4K-32K)", strata(m, 1, 12, batch=1, quantization="q2_0").prefill_rate, 930, "strata-3060")
     m = machine("ryzen9-7950x", 48, 5200, 2, ["rtx-4090"], 4)
-    add("CAL", "4090 + 7950X: IQ3_S decode (gen-only)", strata(m, 1, 16, batch=1).decode_total[1], 88.7, "strata-4090")
-    add("CAL", "4090 + 7950X: IQ3_S prompt tok/s (32K)", strata(m, 1, 16, batch=1).prefill_rate, 2948, "strata-4090")
+    add("CAL", "4090 + 7950X: IQ3_S decode (gen-only, 143K context)", strata(m, 1, 16, batch=1, context=143360).decode_total[1], 88.7, "strata-4090")
+    add("CAL", "4090 + 7950X: IQ3_S prompt tok/s (32K)", strata(m, 1, 16, batch=1, context=143360).prefill_rate, 2948, "strata-4090")
     m = machine("ryzen9-9950x3d", 96, 5600, 2, ["rtx-5090"], 5, os="windows")        # Windows 11, WDDM
     add("VAL", "5090 + 9950X3D: IQ3_S decode", strata(m, 1, 16, batch=1, kv_resident=65536, context=262144).decode_total[1], 142, "strata-5090")
     add("VAL", "5090 + 9950X3D: IQ3_S prompt tok/s (32K)", strata(m, 1, 16, batch=1, kv_resident=65536, context=262144).prefill_rate, 4168, "strata-5090")
