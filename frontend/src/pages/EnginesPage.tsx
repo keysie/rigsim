@@ -175,7 +175,7 @@ export default function EnginesPage() {
                         {(community[e.id] ?? []).map((c, i) => (
                           <li key={i} className="flex flex-wrap items-center gap-x-3">
                             <span>{c.key.streams} stream{c.key.streams > 1 ? "s" : ""}: {Object.entries(c.results).filter(([k]) => k !== "hit")
-                              .map(([k, v]) => `${k.replace("decode_", "writes with ").replace("prefill", "reads").replace("kv_room_tokens", "KV room")} ${v.median}${v.spread ? ` ±${(v.spread * 50).toFixed(0)} %` : ""}`).join(", ")}</span>
+                              .map(([k, v]) => `${measuredLabel(k)} ${v.median}${v.spread ? ` ±${(v.spread * 50).toFixed(0)} %` : ""}`).join(", ")}</span>
                             <span className="text-xs text-muted">{c.near ? `${c.near}; ` : ""}n = {c.n}, trust {c.trust}, CPU {c.cpus.join(" / ")}, {c.os.join(" / ")}</span>
                             {!c.near && <button className="btn" onClick={() => useCluster(e.id, c)}>Use</button>}
                           </li>
@@ -238,6 +238,13 @@ export default function EnginesPage() {
       </div>
     </div>
   );
+}
+
+/** decode_1 → "writes alone", decode_4 → "writes with 4 at once (total)", prefill → "reads", kv_room_tokens → "KV room". */
+export function measuredLabel(k: string): string {
+  const m = k.match(/^decode_(\d+)$/);
+  if (m) return m[1] === "1" ? "writes alone" : `writes with ${m[1]} at once (total)`;
+  return { prefill: "reads", kv_room_tokens: "KV room", hit: "cache hit" }[k] ?? k;
 }
 
 type ArgState = { disabled: boolean; force: unknown; reason: string };

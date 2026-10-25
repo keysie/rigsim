@@ -16,7 +16,7 @@ it("offers community measurements that match the engine and applies them", async
   await open("#engines");
   await screen.findAllByText(/Community measurements for this configuration/, {}, { timeout: 15000 });
   const sub = screen.getByDisplayValue("vLLM 27B").closest("section")!;
-  expect(within(sub).getByText(/writes with 1 39/)).toBeInTheDocument();
+  expect(within(sub).getByText(/writes alone 39/)).toBeInTheDocument();
   await userEvent.click(within(sub).getByRole("button", { name: "Use" }));
   await waitFor(() => expect(useStore.getState().engines[1].benchmarks?.decode_1).toBe(39));
   await within(sub).findByText(/uses your measured values/, {}, { timeout: 10000 });

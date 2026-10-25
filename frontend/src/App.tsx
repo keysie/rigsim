@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { api, exportConfig, onBootPhase, parseConfig, runsInBrowser, sanitizeConfig, useStore, type Catalog } from "./store";
+import { api, exportConfig, onBootPhase, parseConfig, runsInBrowser, sanitizeConfig, staleBuild, useStore, type Catalog } from "./store";
 import ErrorBoundary from "./components/ErrorBoundary";
 import MachinePage from "./pages/MachinePage";
 import EnginesPage from "./pages/EnginesPage";
@@ -103,6 +103,12 @@ export default function App() {
       </aside>
       <main className="px-5 py-6 md:px-10 max-w-6xl">
         {error && <div className="mb-4 rounded bg-red-soft px-3 py-2 text-sm text-red">The catalog did not load: {error}</div>}
+        {(boot === "stale" || staleBuild) && (
+          <div className="mb-4 flex items-center justify-between rounded bg-amber-soft px-3 py-2 text-sm text-amber" role="alert">
+            <span>A newer version of rigsim is on the server; this page is still the old one.</span>
+            <button className="btn" onClick={() => location.reload()}>Reload</button>
+          </div>
+        )}
         {notice && (
           <div className={`mb-4 flex items-center justify-between rounded px-3 py-2 text-sm ${notice.startsWith("Could not") ? "bg-red-soft text-red" : "bg-mask-soft text-mask-deep"}`} role="status">
             <span>{notice}</span><button className="underline" onClick={() => setNotice(null)}>dismiss</button>
