@@ -6,7 +6,7 @@ export function Field({ label, children, hint }: { label: string; children: Reac
     <label className="flex min-w-0 max-w-full flex-col gap-1">
       <span>{label}</span>
       {children}
-      {hint && <span className="text-xs text-muted">{hint}</span>}
+      {hint && <span className="text-[11px] leading-snug text-muted">{hint}</span>}
     </label>
   );
 }

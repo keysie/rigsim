@@ -22,6 +22,6 @@ const coresIn = strata.locator('input[type="number"]').first();
 await coresIn.fill("10"); await page.waitForTimeout(300); await page.getByRole("heading", { name: "Engines" }).click(); await page.waitForTimeout(800);
 const v = Number(await coresIn.inputValue());
 ok(v < 10, `cores are capped at what other engines leave on the CPU (asked 10, got ${v})`);
-ok((await strata.getByText(/not used by other engines/).count()) === 1, "the cores hint says how many are left");
+ok((await strata.getByText(/CPU cores · \d+ of \d+ free/).count()) === 1, "the cores label says how many are left");
 ok(errors.length === 0, "no uncaught page errors");
 await browser.close(); console.log(`all ${step} sharing checks passed`);

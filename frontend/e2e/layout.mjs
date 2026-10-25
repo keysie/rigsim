@@ -25,7 +25,7 @@ await lay.getByLabel("fixed hit_rate").fill("");
 await strata.getByLabel("expert_cache_mib", { exact: true }).fill("0"); await strata.getByRole("spinbutton", { name: "batch", exact: true }).fill("4");
 await strata.getByLabel("kv_resident", { exact: true }).fill("8192"); await strata.getByLabel("context", { exact: true }).fill("131072"); await page.waitForTimeout(1800);
 ok((await lay.locator('[title*="streamed KV"]').count()) >= 4, "KV streaming shows the streamed slots in the host pool");
-ok((await lay.getByText(/worst case at the full 128K context/).count()) === 1, "...and states the link-bound worst case");
+ok((await lay.getByText(/worst case at the full 128K context: [0-9.]+ GB of streamed K\/V/).count()) === 1, "...and states the link-bound worst case");
 await page.goto(BASE + "#machine"); await page.waitForSelector("text=/PCIe lanes/", { timeout: 60000 });
 await page.getByLabel("display on gpu-1").check(); await page.waitForTimeout(800);
 await page.goto(BASE + "#engines"); await page.waitForSelector("text=writes, alone", { timeout: 60000 }); await page.waitForTimeout(1500);
@@ -41,7 +41,20 @@ for (const [w, h, side] of [[1920, 1080, true], [1600, 900, true], [1440, 900, f
     const r = lay.getBoundingClientRect(), s = sec.getBoundingClientRect();
     return { right: r.left > s.left + s.width / 3, settings: grid.getBoundingClientRect().bottom, graphic: r.bottom, vh: innerHeight };
   });
-  if (side) ok(m.right && m.settings <= m.vh && m.graphic <= m.vh, `${w}x${h}: settings and graphic side by side, both in view (${Math.round(m.settings)} / ${Math.round(m.graphic)} of ${m.vh} px)`);
+  if (side) {
+    ok(m.right && m.settings <= m.vh && m.graphic <= m.vh, `${w}x${h}: settings and graphic side by side, both in view (${Math.round(m.settings)} / ${Math.round(m.graphic)} of ${m.vh} px)`);
+    const g = await pg.evaluate(() => {
+      const sec = document.querySelector("section"); const lay = sec.querySelector("[data-testid=strata-layout]");
+      const bars = [...lay.querySelectorAll("div.relative.mt-1")].map((e) => [Math.round(e.getBoundingClientRect().top), Math.round(e.getBoundingClientRect().bottom)]);
+      const stats = [...sec.querySelectorAll("aside")].find((a) => /reads prompts/.test(a.textContent));
+      return { bars, statsAbove: stats.getBoundingClientRect().bottom <= lay.getBoundingClientRect().top + 1 };
+    });
+    ok(g.bars.length >= 3 && g.bars.every((b) => b[0] === g.bars[0][0] && b[1] === g.bars[0][1]), `${w}x${h}: VRAM and RAM stacks share top and bottom (${JSON.stringify(g.bars[0])})`);
+    ok(g.statsAbove, `${w}x${h}: the speeds sit above the graphic`);
+    await pg.getByTestId("overhead-block").first().hover(); await pg.waitForTimeout(300);
+    const tip = pg.getByRole("tooltip").first();
+    ok((await tip.isVisible()) && (await tip.innerText()).includes("CUDA context") && (await tip.innerText()).includes("kept free"), `${w}x${h}: hovering the overhead shows its parts, readable`);
+  }
   else ok(!m.right, `${w}x${h}: the graphic sits below the settings`);
   await pg.close();
 }

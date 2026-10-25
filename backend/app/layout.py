@@ -160,8 +160,9 @@ def strata_layout(*, spec, args, model, gpus, cpu, info, dense_gb, experts_gb, k
         link_cap = min(l["capacity_gbs"] for l in links[:-1]) if len(links) > 1 else links[0]["capacity_gbs"]
         max_windows = link_cap / per_window_gb if per_window_gb else float("inf")
         tok_per_window = 2.8 if model.get("mtp") and args.get("mtp", True) else 1.0
-        headline_kv = (f"worst case at the full {ctx // 1024}K context: {kv_streamed_per_slot_gb:.1f} GB of streamed K/V per slot and window, "
-                       f"{per_window_gb:.1f} GB with all {slots} slots — the link allows at most {max_windows * tok_per_window:.0f} tok/s total then")
+        all_slots = f", {per_window_gb:.1f} GB with all {slots} slots" if slots > 1 else ""
+        headline_kv = (f"worst case at the full {ctx // 1024}K context: {kv_streamed_per_slot_gb:.1f} GB of streamed K/V per slot and window{all_slots} "
+                       f"— the link allows at most {max_windows * tok_per_window:.0f} tok/s total then")
     worst_card = max(cards, key=lambda c: c["overshoot_gb"]) if cards else None
     worst_link = max(links, key=lambda l: l["ratio"]) if links else None
     headline = [headline_kv] if headline_kv else []
@@ -172,9 +173,14 @@ def strata_layout(*, spec, args, model, gpus, cpu, info, dense_gb, experts_gb, k
         if p_["overshoot_gb"] > 0:
             headline.append(f"host RAM: over by {p_['overshoot_gb']:.1f} GB — less parking, fewer streamed slots, or more RAM")
     if worst_link and worst_link["ratio"] > 1:
-        headline.append(f"worst case: {worst_link['a']}↔{worst_link['b']} {worst_link['kind'].upper()} oversubscribed by {(worst_link['ratio'] - 1) * 100:.0f} % "
-                        f"({worst_link['worst_gbs']:.1f} of {worst_link['capacity_gbs']:.1f} GB/s usable at the cards' own pace, "
-                        f"{demand_tps:.0f} tok/s) — the engine actually runs at {tps:.0f} tok/s because of it")
+        what, amount = max(worst_link["parts"].items(), key=lambda kv: kv[1]) if worst_link["parts"] else ("", 0.0)
+        over = f"{worst_link['a']}↔{worst_link['b']} {worst_link['kind'].upper()} oversubscribed by {(worst_link['ratio'] - 1) * 100:.0f} %"
+        if "KV" in what:
+            headline.append(f"worst case at the full {ctx // 1024}K context: {over} by streamed K/V "
+                            f"({worst_link['worst_gbs']:.1f} of {worst_link['capacity_gbs']:.1f} GB/s usable)")
+        else:
+            headline.append(f"worst case: {over} ({worst_link['worst_gbs']:.1f} of {worst_link['capacity_gbs']:.1f} GB/s usable at the cards' own pace, "
+                            f"{demand_tps:.0f} tok/s) — the engine actually runs at {tps:.0f} tok/s because of it")
     return dict(cards=cards, pools=pools, links=links, hit=hit_used, hit_guessed=hit, held=held, headline=headline,
                 fixed_defaults={k: dict(value=v[0], unit=v[1], help=v[2]) for k, v in FIXED_DEFAULTS.items()},
                 fixed=dict(fx or {}), worst_card=(worst_card["id"] if worst_card and worst_card["overshoot_gb"] > 0 else None))
