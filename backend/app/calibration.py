@@ -91,7 +91,7 @@ def run():
     add("CAL", "box: Strata 2x3090 decode, 1 slot", p2.decode_total[1], 125)
     add("CAL", "box: Strata 2x3090 decode, 4 slots total", p2.decode_total[4], 175)
     add("CAL", "box: Strata 2x3090 prompt tok/s", p2.prefill_rate, 3300)
-    add("VAL", "box: Strata 2x3090 115K prompt, seconds", 115000 / p2.prefill_rate + 0.7, 35)
+    add("VAL", "box: Strata 2x3090 115K prompt, seconds", 115000 / p2.prefill_rate + p2.prefill_quad * 115000 ** 2 / 2 + 0.7, 35)
     p3 = strata(box, 3, 9, batch=1)
     add("VAL", "box: Strata 3x3090 prompt tok/s (+25 %)", p3.prefill_rate, 4000)
     v = vllm(box, "qwen3.8-27b", ["gpu-3"])
@@ -123,7 +123,7 @@ def run():
     add("VAL", "3060 + i7-12700: Q2_0 prompt tok/s (4K-32K)", strata(m, 1, 12, batch=1, quantization="q2_0").prefill_rate, 930, "strata-3060")
     m = machine("ryzen9-7950x", 48, 5200, 2, ["rtx-4090"], 4)
     add("CAL", "4090 + 7950X: IQ3_S decode (gen-only)", strata(m, 1, 16, batch=1).decode_total[1], 88.7, "strata-4090")
-    add("VAL", "4090 + 7950X: IQ3_S prompt tok/s (32K)", strata(m, 1, 16, batch=1).prefill_rate, 2948, "strata-4090")
+    add("CAL", "4090 + 7950X: IQ3_S prompt tok/s (32K)", strata(m, 1, 16, batch=1).prefill_rate, 2948, "strata-4090")
     m = machine("ryzen9-9950x3d", 96, 5600, 2, ["rtx-5090"], 5, os="windows")        # Windows 11, WDDM
     add("VAL", "5090 + 9950X3D: IQ3_S decode", strata(m, 1, 16, batch=1, kv_resident=65536, context=262144).decode_total[1], 142, "strata-5090")
     add("VAL", "5090 + 9950X3D: IQ3_S prompt tok/s (32K)", strata(m, 1, 16, batch=1, kv_resident=65536, context=262144).prefill_rate, 4168, "strata-5090")
