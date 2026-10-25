@@ -39,7 +39,8 @@ def fixed_value(fixed: dict | None, key: str):
 
 
 def strata_layout(*, spec, args, model, gpus, cpu, info, dense_gb, experts_gb, kv_gb_per_slot, kv_cells, ctx,
-                  slots, trim, cache_per_card, held, hit, decode_total, prefill_rate, pcie_bw) -> dict:
+                  slots, trim, cache_per_card, held, hit, decode_total, prefill_rate, pcie_bw, miss_via_pcie=False,
+                  tps_card_bound=None, cpu_stream=0.0) -> dict:
     fx = spec.fixed if hasattr(spec, "fixed") else {}
     f = lambda k: fixed_value(fx, k)  # noqa: E731
     n = len(gpus)
@@ -119,7 +120,13 @@ def strata_layout(*, spec, args, model, gpus, cpu, info, dense_gb, experts_gb, k
     active_expert_gb = max(0.0, model["active_b"] - model["params_b"] * (1 - model["expert_share"])) * (experts_gb / max(1e-9, model["params_b"] * model["expert_share"]))
     tps = max(decode_total.values()) if decode_total else 0.0
     rows = slots
-    miss_gbs = active_expert_gb * (1 - hit_used) * tps                      # expert misses streamed per second
+    # worst case = the demand if the cards ran at their own pace (every expert resident): the expert path — PCIe
+    # copies or the CPU's compute — must then carry the misses; the ratio says how far it falls short
+    demand_tps = tps_card_bound or tps
+    miss_gbs = active_expert_gb * (1 - hit_used) * demand_tps               # expert bytes missed per second at card pace
+    # where those bytes go: in PCIe-copy mode they cross the link to the card; in CPU mode the CPU computes the
+    # missed experts in place and only activations cross (a few MB per window, negligible)
+    miss_link_gbs = miss_gbs if miss_via_pcie else 0.0
     # streamed KV: each window re-reads the slot's non-resident K/V; the engine's rate already includes that cost,
     # so this part shows how much of the link it eats rather than a hypothetical overshoot
     windows_per_s = tps / (2.8 if model.get("mtp") and args.get("mtp", True) else 1.0)
@@ -129,16 +136,23 @@ def strata_layout(*, spec, args, model, gpus, cpu, info, dense_gb, experts_gb, k
         dev = info["_devices"].get(g["id"], {})
         cap = float(dev.get("link_bw_gbs", pcie_bw)) * eff
         share = 1.0 if n == 1 else (1.0 if (peer and i == 0) else 1 / n)
-        parts = {"expert misses (decode)": miss_gbs * share, "streamed KV (decode)": kv_gbs * share, "expert streaming (prefill)": prefill_gbs * share}
-        worst_decode = parts["expert misses (decode)"] + parts["streamed KV (decode)"]
+        parts = {("expert misses copied to the card (decode)" if miss_via_pcie else "expert misses (computed on the CPU, nothing crosses)"): miss_link_gbs * share,
+                 "streamed KV (decode)": kv_gbs * share, "expert streaming (prefill)": prefill_gbs * share}
+        worst_decode = miss_link_gbs * share + parts["streamed KV (decode)"]
         worst = max(worst_decode, parts["expert streaming (prefill)"])
         links.append(dict(a=g["id"], b=f"cpu-{cpu_idx}", kind=dev.get("link_type", "pcie"), capacity_gbs=cap, nominal_gbs=float(dev.get("link_bw_gbs", pcie_bw)),
                           worst_gbs=worst, ratio=(worst / cap if cap else 0.0), parts=parts,
                           verdict=("oversubscribed" if cap and worst > cap else "fits")))
-    ram_load = sum(l["worst_gbs"] for l in links)
+    # host memory: expert reads for the misses (read once by the CPU, or read + DMA'd when copied), streamed KV, prefill streaming
+    if not miss_via_pcie and cpu_stream > 0:
+        links.append(dict(a="cpu expert path", b=f"cpu-{cpu_idx}", kind="cpu compute", capacity_gbs=float(cpu_stream), nominal_gbs=float(cpu_stream),
+                          worst_gbs=miss_gbs, ratio=(miss_gbs / cpu_stream), parts={"expert misses computed on the CPU, at card pace": miss_gbs},
+                          verdict=("oversubscribed" if miss_gbs > cpu_stream else "fits")))
+    ram_load = (miss_gbs * (2.0 if miss_via_pcie else 1.0)) + kv_gbs * 2.0 + max(0.0, prefill_gbs) * 2.0
     links.append(dict(a=f"cpu-{cpu_idx}", b="ram", kind="memory", capacity_gbs=float(cpu_info["ram_bw_gbs"]), nominal_gbs=float(cpu_info["ram_bw_gbs"]),
-                      worst_gbs=ram_load * 2, ratio=(ram_load * 2 / cpu_info["ram_bw_gbs"] if cpu_info["ram_bw_gbs"] else 0.0),
-                      parts={"expert reads for the cards (read + copy)": ram_load * 2}, verdict=("oversubscribed" if ram_load * 2 > cpu_info["ram_bw_gbs"] else "fits")))
+                      worst_gbs=ram_load, ratio=(ram_load / cpu_info["ram_bw_gbs"] if cpu_info["ram_bw_gbs"] else 0.0),
+                      parts={"expert reads for misses": miss_gbs * (2.0 if miss_via_pcie else 1.0), "streamed KV": kv_gbs * 2.0, "prefill expert streaming": prefill_gbs * 2.0},
+                      verdict=("oversubscribed" if ram_load > cpu_info["ram_bw_gbs"] else "fits")))
     headline_kv = None
     if kv_streamed_per_slot_gb > 0:
         # worst case: every slot at the full context window; the link then bounds the window rate
@@ -159,7 +173,8 @@ def strata_layout(*, spec, args, model, gpus, cpu, info, dense_gb, experts_gb, k
             headline.append(f"host RAM: over by {p_['overshoot_gb']:.1f} GB — less parking, fewer streamed slots, or more RAM")
     if worst_link and worst_link["ratio"] > 1:
         headline.append(f"worst case: {worst_link['a']}↔{worst_link['b']} {worst_link['kind'].upper()} oversubscribed by {(worst_link['ratio'] - 1) * 100:.0f} % "
-                        f"({worst_link['worst_gbs']:.1f} of {worst_link['capacity_gbs']:.1f} GB/s usable)")
+                        f"({worst_link['worst_gbs']:.1f} of {worst_link['capacity_gbs']:.1f} GB/s usable at the cards' own pace, "
+                        f"{demand_tps:.0f} tok/s) — the engine actually runs at {tps:.0f} tok/s because of it")
     return dict(cards=cards, pools=pools, links=links, hit=hit_used, hit_guessed=hit, held=held, headline=headline,
                 fixed_defaults={k: dict(value=v[0], unit=v[1], help=v[2]) for k, v in FIXED_DEFAULTS.items()},
                 fixed=dict(fx or {}), worst_card=(worst_card["id"] if worst_card and worst_card["overshoot_gb"] > 0 else None))

@@ -16,8 +16,9 @@ await strata.getByLabel("parking_mib", { exact: true }).fill("8192"); await stra
 ok((await lay.getByText(/fits at most 8 full conversations/).count()) >= 1, "parking shows how many full conversations fit");
 await strata.getByRole("spinbutton", { name: "batch", exact: true }).fill("8");
 await strata.getByLabel("expert_cache_mib", { exact: true }).fill("2048"); await page.waitForTimeout(1800);
-ok((await lay.getByText(/oversubscribed by \d+ %/).count()) >= 1, "a starved cache makes the PCIe worst case visibly oversubscribed");
 await lay.getByText(/Fixed allocations and assumptions/).click(); await page.waitForTimeout(300);
+await lay.getByLabel("fixed hit_rate").fill("0.2"); await page.waitForTimeout(1800);          // a starved cache, hit rate set low
+ok((await lay.getByText(/oversubscribed by \d+ %/).count()) >= 1, "a starved cache makes the PCIe worst case visibly oversubscribed");
 await lay.getByLabel("fixed hit_rate").fill("0.97"); await page.waitForTimeout(1800);
 ok((await lay.getByText(/\(set by hand\)/).count()) === 1 && (await lay.getByText(/oversubscribed by \d+ %/).count()) === 0, "a hand-set hit rate is used and relieves the link");
 await lay.getByLabel("fixed hit_rate").fill("");

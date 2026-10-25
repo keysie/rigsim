@@ -14,8 +14,8 @@ BOX = {"os": "linux", "cpus": [{"cpu_id": "i9-10900x", "enabled": True, "ram_gb"
        "devices": [{"id": "gpu-1", "kind": "gpu", "model_id": "rtx-3090", "link_gen": 3, "link_width": 16, "power_w": 250},
                    {"id": "gpu-2", "kind": "gpu", "model_id": "rtx-3090", "link_gen": 3, "link_width": 16, "power_w": 250},
                    {"id": "gpu-3", "kind": "gpu", "model_id": "rtx-3090", "link_gen": 3, "link_width": 8, "power_w": 250}], "nvlinks": []}
-STRATA = {"id": "s", "engine": "strata", "version": "0.1.43.1", "model_id": "qwen3.8-flash-next", "gpus": ["gpu-1", "gpu-2"], "cpu_cores": 9, "args": {"batch": 4}}
-VLLM = {"id": "v", "engine": "vllm", "version": "0.31.0", "model_id": "qwen3.8-27b", "gpus": ["gpu-3"], "cpu_cores": 2,
+STRATA = {"id": "s", "engine": "strata", "version": "0.1.43.1", "model_id": "qwen3.8-flash-next", "gpus": ["gpu-1", "gpu-2"], "cpu_cores": 6, "args": {"batch": 4}}
+VLLM = {"id": "v", "engine": "vllm", "version": "0.31.0", "model_id": "qwen3.8-27b", "gpus": ["gpu-3"], "cpu_cores": 1,
         "args": {"tensor_parallel": "1", "max_num_seqs": 4}}
 ROLES = {"maker": "s", "sub": "v"}
 

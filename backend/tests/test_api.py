@@ -12,10 +12,10 @@ BOX = {"cpus": [{"cpu_id": "i9-10900x", "ram_gb": 128, "ram_mts": 3200, "ram_cha
                    {"id": "ssd-1", "kind": "ssd", "model_id": "nvme-gen3", "link_gen": 3, "link_width": 4, "capacity_tb": 2}]}
 ENGINES = [
     {"id": "maker", "name": "Strata", "engine": "strata", "version": "0.1.43.1", "model_id": "qwen3.8-flash-next",
-     "gpus": ["gpu-1", "gpu-2"], "cpu_cores": 9, "args": {"batch": 4}},
-    {"id": "sub", "name": "27B", "engine": "vllm", "version": "0.31.0", "model_id": "qwen3.8-27b", "gpus": ["gpu-3"],
+     "gpus": ["gpu-1", "gpu-2"], "cpu_cores": 6, "args": {"batch": 4}},
+    {"id": "sub", "name": "27B", "engine": "vllm", "version": "0.31.0", "model_id": "qwen3.8-27b", "gpus": ["gpu-3"], "cpu_cores": 1,
      "args": {"tensor_parallel": "1", "max_num_seqs": 4}},
-    {"id": "guard", "engine": "llama.cpp", "version": "b11552", "model_id": "ministral-3-3b", "gpus": ["gpu-4"],
+    {"id": "guard", "engine": "llama.cpp", "version": "b11552", "model_id": "ministral-3-3b", "gpus": ["gpu-4"], "cpu_cores": 1,
      "args": {"parallel": 1, "quantization": "q8_0"}},
     {"id": "coord", "engine": "hosted-api", "version": "provider", "model_id": "deepseek-v4.1-flash"},
 ]
@@ -50,3 +50,14 @@ def test_simulate_reports_bad_config():
     body = {"machine": BOX, "engines": ENGINES, "roles": {"maker": "nope"}, "concurrency": [1], "scenarios": 1}
     r = c.post("/api/simulate", json=body).json()
     assert r["errors"]
+
+
+def test_sharing_a_card_or_oversubscribing_cores_is_refused():
+    shared = [dict(ENGINES[0]), dict(ENGINES[2], gpus=["gpu-2"])]
+    r = c.post("/api/engines/derive", json={"machine": BOX, "engines": shared}).json()["engines"]
+    assert any("one engine per card" in e for e in r["maker"]["errors"]) and any("one engine per card" in e for e in r["guard"]["errors"])
+    body = {"machine": BOX, "engines": shared, "roles": {"maker": "maker", "guard": "guard"}, "concurrency": [1], "scenarios": 2}
+    assert any("one engine per card" in e for e in c.post("/api/simulate", json=body).json()["errors"])
+    greedy = [dict(ENGINES[0], cpu_cores=8), dict(ENGINES[1], cpu_cores=4)]
+    r = c.post("/api/engines/derive", json={"machine": BOX, "engines": greedy}).json()["engines"]
+    assert any("cores are not shared" in e for e in r["maker"]["errors"])

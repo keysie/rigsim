@@ -108,6 +108,8 @@ export default function EnginesPage() {
           const hosted = def.kind === "hosted";
           const usedGpus = new Map<string, string>();
           engines.forEach((o) => { if (o.id !== e.id) o.gpus.forEach((g) => usedGpus.set(g, o.name || o.id)); });
+          // cores on this engine's CPU not taken by other local engines: no oversubscription, no sharing
+          const coresLeft = (me: EngineSpec) => cpuSpec(me.cpu).cores - engines.filter((o) => o.id !== me.id && o.cpu === me.cpu && o.engine !== "hosted-api").reduce((a, o) => a + (o.cpu_cores || 0), 0);
           return (
             <section key={e.id} className="rounded-lg border border-line bg-panel">
               <div className={`grid gap-5 p-5 ${side(e) ? "grid-cols-[minmax(0,1fr)_minmax(0,1fr)]" : "lg:grid-cols-[3fr_2fr]"}`}>
@@ -140,10 +142,11 @@ export default function EnginesPage() {
                             const on = e.gpus.includes(g.id); const other = usedGpus.get(g.id);
                             const spec = catalog.gpus.find((x) => x.id === g.model_id)!;
                             return (
-                              <button key={g.id} className={`chip border ${on ? "bg-mask text-white border-mask" : "border-line bg-paper"}`}
-                                      title={`${spec.name}${other ? ` · also used by ${other}` : ""}`}
+                              <button key={g.id} className={`chip border ${on ? "bg-mask text-white border-mask" : other ? "border-line bg-paper opacity-40 cursor-not-allowed line-through" : "border-line bg-paper"}`}
+                                      disabled={Boolean(other) && !on} aria-disabled={Boolean(other) && !on}
+                                      title={`${spec.name}${other ? ` · used by ${other}: one engine per card (sharing is out of scope)` : ""}`}
                                       onClick={() => patch(e.id, (x) => { x.gpus = on ? x.gpus.filter((y) => y !== g.id) : [...x.gpus, g.id]; })}>
-                                {g.id}{other ? "*" : ""}
+                                {g.id}
                               </button>
                             );
                           })}
@@ -155,8 +158,8 @@ export default function EnginesPage() {
                                   onChange={(c) => patch(e.id, (x) => { x.cpu = c; })} />
                         </Field>
                       )}
-                      <Field label="CPU cores" hint={`${cpuSpec(e.cpu).cores} on CPU ${e.cpu + 1}`}>
-                        <NumInput min={1} max={cpuSpec(e.cpu).cores} value={e.cpu_cores} className="w-20"
+                      <Field label="CPU cores" hint={`${coresLeft(e)} of ${cpuSpec(e.cpu).cores} on CPU ${e.cpu + 1} not used by other engines`}>
+                        <NumInput min={1} max={Math.max(1, coresLeft(e))} value={e.cpu_cores} className="w-20"
                                   onChange={(n) => patch(e.id, (x) => { x.cpu_cores = n ?? 1; })} />
                       </Field>
                       <Field label="Model storage">

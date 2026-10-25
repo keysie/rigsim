@@ -71,20 +71,18 @@ export const DEFAULT_MACHINE: Machine = {
 
 export const DEFAULT_ENGINES: EngineSpec[] = [
   { id: "maker", name: "Strata maker", engine: "strata", version: "0.1.43.1", model_id: "qwen3.8-flash-next",
-    args: { batch: 4 }, gpus: ["gpu-1", "gpu-2"], cpu: 0, cpu_cores: 9, storage: "ssd-1" },
+    args: { batch: 4 }, gpus: ["gpu-1", "gpu-2"], cpu: 0, cpu_cores: 7, storage: "ssd-1" },
   { id: "sub", name: "vLLM 27B", engine: "vllm", version: "0.31.0", model_id: "qwen3.8-27b",
-    args: { tensor_parallel: "1", max_num_seqs: 4 }, gpus: ["gpu-3"], cpu: 0, cpu_cores: 2, storage: "ssd-1" },
+    args: { tensor_parallel: "1", max_num_seqs: 4 }, gpus: ["gpu-3"], cpu: 0, cpu_cores: 1, storage: "ssd-1" },
   { id: "guard", name: "Guard", engine: "llama.cpp", version: "b11552", model_id: "ministral-3-3b",
     args: { parallel: 1, quantization: "q8_0", ctx_size: 8192 }, gpus: ["gpu-4"], cpu: 0, cpu_cores: 1, storage: "ssd-1" },
-  { id: "judge", name: "Judge", engine: "llama.cpp", version: "b11552", model_id: "granite-4.2-8b",
-    args: { parallel: 1, quantization: "q4_k_m", ctx_size: 32768 }, gpus: ["gpu-4"], cpu: 0, cpu_cores: 1, storage: "ssd-1" },
   { id: "rerank", name: "Reranker", engine: "llama.cpp", version: "b11552", model_id: "bge-reranker-v2-m3",
-    args: { n_gpu_layers: "0", parallel: 2 }, gpus: [], cpu: 0, cpu_cores: 4, storage: "ssd-1" },
+    args: { n_gpu_layers: "0", parallel: 2 }, gpus: [], cpu: 0, cpu_cores: 1, storage: "ssd-1" },
   { id: "coord", name: "Coordinator (hosted)", engine: "hosted-api", version: "provider", model_id: "deepseek-v4.1-flash",
     args: {}, gpus: [], cpu: 0, cpu_cores: 0, storage: null },
 ];
 
-export const DEFAULT_ROLES: Roles = { coordinator: "coord", maker: "maker", sub: "sub", guard: "guard", judge: "judge", reranker: "rerank" };
+export const DEFAULT_ROLES: Roles = { coordinator: "coord", maker: "maker", sub: "sub", guard: "guard", judge: null, reranker: "rerank" };
 
 // ---------------------------------------------------------------- api
 const API_BASE = (import.meta.env?.VITE_API_BASE as string | undefined) ?? "";
@@ -218,6 +216,17 @@ export function sanitizeConfig(c: { machine: Machine; engines: EngineSpec[]; rol
     x.cpu_cores = clampInt(x.cpu_cores, 1, 4096, 4);
     return x;
   });
+  const takenGpu = new Map<string, string>();
+  const usedCores: Record<number, number> = {};
+  for (const e of engines) {
+    e.gpus = e.gpus.filter((g) => { const by = takenGpu.get(g); if (by && by !== e.id) { notes.push(`${e.name || e.id}: ${g} is already used by ${by}; one engine per card`); return false; } takenGpu.set(g, e.id); return true; });
+    if (e.engine !== "hosted-api") {
+      const spec = cat.cpus.find((x) => x.id === m.cpus[e.cpu].cpu_id)!;
+      const left = Math.max(1, spec.cores - (usedCores[e.cpu] ?? 0));
+      if (e.cpu_cores > left) { notes.push(`${e.name || e.id}: cores reduced to the ${left} left on CPU ${e.cpu + 1}`); e.cpu_cores = left; }
+      usedCores[e.cpu] = (usedCores[e.cpu] ?? 0) + e.cpu_cores;
+    }
+  }
   const ids = new Set(engines.map((e) => e.id));
   const roles = Object.fromEntries(Object.entries(c.roles ?? {}).map(([k, v]) => [k, v && ids.has(v as string) ? v : null])) as typeof DEFAULT_ROLES;
   return { machine: m, engines: pruneEngines(engines, m), roles, notes };
