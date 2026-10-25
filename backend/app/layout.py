@@ -93,7 +93,8 @@ def strata_layout(*, spec, args, model, gpus, cpu, info, dense_gb, experts_gb, k
     cpu_info = info["cpus"].get(cpu_idx) or info["cpus"].get(str(cpu_idx)) or cpu
     ram = float(cpu_info["ram_gb"])
     boxes = [dict(kind="overhead", label="OS, Docker, the rest", gb=f("host_os_reserve_gb"), exact=False),
-             dict(kind="experts", label="expert pack (mmap)", gb=experts_gb * f("expert_pack_overhead"), exact=True),
+             dict(kind="experts", label="expert pack (mmap)" + (" — RAM budget; the rest on the SSD" if model.get("ssd_stream") and experts_gb > max(0.0, ram - 24) else ""),
+                  gb=(min(experts_gb, max(0.0, ram - 24)) if model.get("ssd_stream") else experts_gb) * f("expert_pack_overhead"), exact=True),
              dict(kind="overhead", label="pinned streaming buffers", gb=f("pinned_chunk_mib") * n / 1024, exact=False)]
     if kv_streamed_per_slot_gb > 0:
         for s_ in range(slots):

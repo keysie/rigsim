@@ -34,7 +34,10 @@ no server, no accounts, nothing is sent anywhere. Configurations can be saved an
    Mac Pro M2 Ultra, Framework Desktop (Strix Halo) or a typical desktop; everything stays editable, so a
    Spark with an eGPU on its TB4 port is two clicks. Unified-memory machines model the iGPU as sharing the
    pool's bandwidth. The lane budget and all bandwidths update with every change.
-2. **Engines** — one model per engine. Strata, vLLM, llama.cpp and a hosted API, with versions that define the
+2. **Engines** — one model per engine. Strata serves every Flash-Next pack its docs list: the original
+   (IQ3_S / IQ3_XXS / IQ2_XS / Q2_0), Swift 1.5, the Coder (256 experts, IQ1_M), the Unsloth UD packs (IQ4_XS /
+   Q4_K_XL / Q6_K_XL, whose experts beyond RAM minus 24 GB are read from the model SSD) and the OrcaRouter
+   IQ3_XXS; the pack field offers only what the chosen model comes in. Strata, vLLM, llama.cpp and a hosted API, with versions that define the
    arguments. Assign GPUs, a CPU, cores and a model SSD. Beside each engine: prompt-reading rate, writing rate
    alone and with several requests, expert-cache hit, KV room, VRAM per card, and why something does not fit.
    Measured values can be entered and override the derived ones. Arguments follow the rules the engines
@@ -93,7 +96,7 @@ Forty-one further points were **held out**: more cells from the same machine, St
 on 3090 / 4090), and across the prebuilts: M1 Ultra, M3 Ultra, M4 Max, M5 Max and M5 Ultra in other
 formats and in prompt processing (llama.cpp discussion #4167), Strix Halo prompt processing and a 27B dense
 model with and without MTP plus the RX 7900 XTX (ROCm scoreboard #15021), and the Spark's prompt rate
-(#16578). Result: 17 of 17 calibration points and 38 of 41 held-out points within ±30 %, median error
+(#16578). Result: 18 of 18 calibration points and 40 of 43 held-out points within ±30 %, median error
 8 % and 14 %, worst held-out miss 37 %. `backend/tests/test_validation.py` keeps the model inside those
 bounds; the *Calibration data* page recomputes the whole table from the current code.
 

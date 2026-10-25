@@ -50,6 +50,11 @@ SOURCES = {
                           url=STRATA + "2026-10-02-community-rtx2080ti-11gb", note="IQ3_S at 262K with KV streaming and a 3.25 GiB expert cache."),
     "strata-4000ada": dict(name="Strata community report: 2 x RTX 4000 Ada, EPYC 7313P, 125 GB (Linux)",
                            url=STRATA + "2026-10-02-community-rtx4000ada-layer-split", note="IQ3_S, 2- vs 3-card layer split, 16.6K prompt."),
+    "strata-coder": dict(name="Strata community report: 2 x RTX 3090 in an EPYC 7453 VM, Coder IQ1_M",
+                         url=STRATA + "2026-09-29-rtx3090-epyc-milan", note="Flash-Next Coder (256 experts), one and two cards (layer split), 0.1.27."),
+    "strata-models": dict(name="Strata docs/MODELS.md and UNSLOTH_Q4.md: the Unsloth packs",
+                          url="https://github.com/Niko1221/Strata/blob/main/docs/UNSLOTH_Q4.md",
+                          note="UD-Q4_K_XL on 'a 64 GB PC with a 12 GB GPU': 7–8.5 tok/s with the experts beyond RAM read from an NVMe SSD."),
     "llamacpp-table": dict(name="llama.cpp CUDA table with build numbers (r/LocalLLaMA, 2024-11)",
                            url="https://www.reddit.com/r/LocalLLaMA/comments/1ghvwsj/", note="Llama 3.1 8B Q4_0, b4011, flash attention on: pp512 / tg128 for 3090, 4090, 3050, M2, EPYC."),
     "llamacpp-apple": dict(name="llama.cpp discussion #4167: Performance of llama.cpp on Apple Silicon M-series (ggerganov)",
@@ -180,6 +185,19 @@ def run():
                             args={"quantization": "mxfp4", "parallel": 1, "ctx_size": 4096}), sp)
     add("CAL", "DGX Spark: gpt-oss-120b MXFP4 tg32", oss.speed_per_request[1], 52.9, "llamacpp-spark")
     add("VAL", "DGX Spark: gpt-oss-120b MXFP4 pp2048", oss.prefill_rate, 1689, "llamacpp-spark")
+
+    # --- the other Flash-Next packs ------------------------------------------------------------------
+    m = machine("epyc-7453", 256, 3200, 8, ["rtx-3090", "rtx-3090"], 4)
+    coder = lambda n: derive(EngineSpec(id="s", engine="strata", version="0.1.43.1", model_id="qwen3.8-flash-next-coder",  # noqa: E731
+                                        gpus=[f"gpu-{i + 1}" for i in range(n)], cpu_cores=16, args={"batch": 1, "quantization": "iq1_m"}), m)
+    add("CAL", "Coder IQ1_M on one 3090 (EPYC 7453 VM): decode", coder(1).decode_total[1], 66.8, "strata-coder")
+    add("VAL", "Coder IQ1_M on two 3090 (layer split): decode", coder(2).decode_total[1], 98.6, "strata-coder")
+    m = validate(Machine(cpus=[CpuSlot(cpu_id="ryzen9-5950x", ram_gb=64, ram_mts=3200, ram_channels=2)],
+                         devices=[PcieDevice(id="gpu-1", kind="gpu", model_id="rtx-3060-12g", link_gen=4, link_width=16),
+                                  PcieDevice(id="ssd-1", kind="ssd", model_id="nvme-gen4", link_gen=4, link_width=4, capacity_tb=2)]))
+    u = derive(EngineSpec(id="s", engine="strata", version="0.1.43.1", model_id="qwen3.8-flash-next-unsloth", gpus=["gpu-1"], cpu_cores=16,
+                          storage="ssd-1", args={"batch": 1, "quantization": "ud_q4_k_xl"}), m)
+    add("VAL", "Unsloth UD-Q4_K_XL, 64 GB PC + 12 GB GPU, experts partly on NVMe: decode", u.decode_total[1], 7.8, "strata-models")
 
     # --- llama.cpp dense models, public tables -------------------------------------------------------
     m = machine("ryzen9-7950x", 64, 5200, 2, ["rtx-3090"], 4)

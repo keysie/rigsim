@@ -9,7 +9,7 @@ export type Gpu = { id: string; name: string; vendor: string; year: number; vram
   fp16_tflops: number; pcie_gen: number; pcie_lanes: number; nvlink_gbs: number; slots: number; tdp_w: number; form: string; proposed?: boolean };
 export type Ssd = { id: string; name: string; pcie_gen: number; pcie_lanes: number; seq_read_gbs: number;
   rand_read_mbs: number; capacities_tb: number[] };
-export type Model = { id: string; name: string; family: string; params_b: number; active_b: number; experts: number;
+export type Model = { id: string; name: string; family: string; params_b: number; active_b: number; experts: number; quants?: string[]; note?: string;
   mtp: boolean; vision: boolean; max_context: number; hosted?: boolean; reranker?: boolean };
 export type ArgDef = { name: string; type: "int" | "float" | "bool" | "choice"; default: unknown; min?: number;
   max?: number; options?: string[]; help: string };
