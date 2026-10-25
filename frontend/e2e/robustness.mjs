@@ -96,7 +96,7 @@ ok(!(await st2.getByLabel("pipeline_windows").isDisabled()), "with one slot it b
 ok(await st2.getByLabel("batch_groups").isDisabled(), "...while batch_groups is greyed out (nothing to pipeline)");
 const vl = card("vLLM 27B");
 await vl.getByLabel("quantization").selectOption("fp8"); await page.waitForTimeout(1500);
-ok((await vl.getByText(/FP8 weights need Ada Lovelace/).count()) >= 1 && (await vl.getByLabel("quantization").inputValue()) === "awq4", "FP8 on a 3090 is forced back to AWQ with the reason");
+ok((await vl.getByText(/FP8 weights need Ada Lovelace.*→ awq4/).count()) >= 1 && (await vl.getByLabel("quantization").isEnabled()), "FP8 on a 3090: the engine uses AWQ, says why, and the field stays editable");
 ok(await vl.getByLabel("speculative").isDisabled() === false || (await vl.getByText(/no MTP/).count()) === 0, "speculative decoding is offered for a model with an MTP head");
 await vl.getByRole("combobox").nth(2).selectOption("qwen3-32b"); await page.waitForTimeout(1500);
 ok(await vl.getByLabel("speculative").isDisabled(), "...and greyed out for one without");

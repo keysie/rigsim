@@ -32,11 +32,12 @@ def test_strata_batch_mtp_needs_serial_groups_and_mtp():
     assert r["arg_states"]["batch_mtp"]["disabled"]
 
 
-def test_strata_parking_needs_both_values():
-    r = strata(["gpu-1"], batch=2, parking_mib=8192)
-    assert r["arg_states"]["parking_slots"]["force"] == 4
+def test_strata_parking_needs_both_values_and_follows_the_conversation_size_not_the_slots():
+    # 8192 MiB at the default 32K context: a full conversation is ~0.66 GB, so 12 fit — whatever the batch size
+    forced = {b: strata(["gpu-1"], batch=b, parking_mib=8192)["arg_states"]["parking_slots"]["force"] for b in (1, 2, 4, 8)}
+    assert len(set(forced.values())) == 1 and 10 <= forced[1] <= 14, forced
     r = strata(["gpu-1"], batch=2, parking_slots=6)
-    assert r["arg_states"]["parking_mib"]["force"] == 4096
+    assert 3000 <= r["arg_states"]["parking_mib"]["force"] <= 5120        # 6 x ~0.66 GB, rounded up to a GiB
 
 
 def test_strata_peer_device_excludes_split_options():

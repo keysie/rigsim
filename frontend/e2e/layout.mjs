@@ -25,11 +25,34 @@ await lay.getByLabel("fixed hit_rate").fill("");
 await strata.getByLabel("expert_cache_mib", { exact: true }).fill("0"); await strata.getByRole("spinbutton", { name: "batch", exact: true }).fill("4");
 await strata.getByLabel("kv_resident", { exact: true }).fill("8192"); await strata.getByLabel("context", { exact: true }).fill("131072"); await page.waitForTimeout(1800);
 ok((await lay.locator('[title*="streamed KV"]').count()) >= 4, "KV streaming shows the streamed slots in the host pool");
-ok((await lay.getByText(/worst case at the full 128K context: [0-9.]+ GB of streamed K\/V/).count()) === 1, "...and states the link-bound worst case");
+ok((await lay.getByText(/at the full 128K context every window streams [0-9.]+ GB of K\/V per slot/).count()) === 1, "...and states the link-bound worst case");
 await page.goto(BASE + "#machine"); await page.waitForSelector("text=/PCIe lanes/", { timeout: 60000 });
 await page.getByLabel("display on gpu-1").check(); await page.waitForTimeout(800);
 await page.goto(BASE + "#engines"); await page.waitForSelector("text=writes, alone", { timeout: 60000 }); await page.waitForTimeout(1500);
 ok((await page.getByTestId("strata-layout").locator('[title*="display / desktop"]').count()) === 1, "the display checkbox adds a display box on that card");
+// plausibility: what one setting must not do to another, and what the speeds must show
+await page.goto(BASE + "#engines"); await page.reload(); await page.waitForSelector("text=writes, alone", { timeout: 120000 }); await page.waitForTimeout(1500);
+{
+  const st = page.locator("section", { has: page.locator('input[value="Strata maker"]') });
+  const L = st.getByTestId("strata-layout");
+  const put = async (name, v) => { const el = name === "batch" ? st.getByRole("spinbutton", { name: "batch", exact: true }) : st.getByLabel(name, { exact: true }); await el.fill(String(v)); await page.waitForTimeout(1000); };
+  await put("parking_mib", 32000); await put("parking_slots", 0); await put("context", 128000);
+  const seen = new Set();
+  for (const b of [1, 4, 8]) { await put("batch", b); seen.add(await L.getByText(/parking fits|no parking/).first().getAttribute("title")); }
+  ok(seen.size === 1, `the parked conversations do not change with the slot count (${[...seen][0]})`);
+  ok(await st.getByLabel("parking_slots", { exact: true }).isEditable(), "a field with a forced value stays editable");
+  ok((await st.locator("aside").first().getByText(/writes, 8 at once \(set\)/).count()) === 1, "the speeds show the configured slot count");
+  ok(/host RAM\s+[0-9.]+ of 128 GB/.test(await st.locator("aside").first().innerText()), "host RAM in the speeds is the graphic's pool");
+  ok(/full 125K prompt/.test(await st.locator("aside").first().innerText()), "the speeds say how long a full-context prompt takes to read");
+  const before = await st.locator("aside").first().innerText();
+  await L.getByText(/Fixed allocations/).click(); await L.getByLabel("fixed hit_rate").fill("0.4"); await page.waitForTimeout(1500);
+  ok(/40 % hits/.test(await st.locator("aside").first().innerText()) && before !== await st.locator("aside").first().innerText(), "a hand-set hit rate changes the speeds, not only the graphic");
+  await L.getByLabel("fixed hit_rate").fill(""); await page.waitForTimeout(800);
+  await put("batch", 1); await st.getByLabel("multi_gpu").selectOption("peer-device"); await page.waitForTimeout(1500);
+  ok((await L.getByText(/peer expert tier/).count()) >= 1, "peer-device shows the peer card as an expert tier");
+  await st.getByLabel("multi_gpu").selectOption("layer-split"); await page.waitForTimeout(800);
+}
+
 // wide windows: settings and graphic side by side, both on one screen; narrower windows: graphic below
 for (const [w, h, side] of [[1920, 1080, true], [1600, 900, true], [1440, 900, false]]) {
   const pg = await browser.newPage({ viewport: { width: w, height: h } });
@@ -53,6 +76,8 @@ for (const [w, h, side] of [[1920, 1080, true], [1600, 900, true], [1440, 900, f
     ok(g.statsAbove, `${w}x${h}: the speeds sit above the graphic`);
     await pg.getByTestId("overhead-block").first().hover(); await pg.waitForTimeout(300);
     const tip = pg.getByRole("tooltip").first();
+    const tb = await tip.boundingBox();
+    ok(tb && tb.x >= 0 && tb.x + tb.width <= w && tb.y >= 0 && tb.y + tb.height <= h, `${w}x${h}: the overhead breakdown stays inside the window`);
     ok((await tip.isVisible()) && (await tip.innerText()).includes("CUDA context") && (await tip.innerText()).includes("kept free"), `${w}x${h}: hovering the overhead shows its parts, readable`);
   }
   else ok(!m.right, `${w}x${h}: the graphic sits below the settings`);

@@ -21,6 +21,8 @@ from . import argrules, layout as layout_mod
 GPU_BW_EFF = 0.75          # share of spec bandwidth a decode kernel achieves (27B AWQ on a 3090: 39 tok/s; 8B Q4_0: 167)
 GPU_FLOPS_EFF = 0.50       # share of FP16 tensor peak a prefill achieves (dense models; llama.cpp pp512 8B: ~0.68 on 3090/4090)
 STRATA_FLOPS_EFF = 0.41    # Strata's MoE prompt path (box at a 250 W cap, 4090 / 5090 reports uncapped)
+STRATA_PREFILL_LINK_EFF = 0.5    # share of the link rate expert streaming reaches during prompt reading (fitted)
+STRATA_PREFILL_EXPOSED = 0.15   # share of the shorter of compute / expert streaming that prefetching does not hide
 HIT_SKEW = 4.0             # routing is skewed: hit = 1 - (1 - held)^HIT_SKEW
 CPU_EXPERT_GBS_PER_CORE = 3.0   # fallback when a CPU has no ISA data
 CPU_EXPERT_RAM_SHARE = 0.60     # expert compute uses at most this share of the memory pool bandwidth
@@ -177,6 +179,11 @@ def derive(spec, machine_info) -> EnginePerf:
             r = _llama(p, args, model, gpus, cpu, machine_info)
         r = _apply_benchmarks(r, spec)
         _watts(r, gpus, cpu, machine_info)
+        ctx = int(args.get("context") or args.get("max_model_len") or args.get("ctx_size") or 0)
+        if ctx and r.prefill_rate > 0 and not r.errors:
+            # reading a prompt that fills the window: the weights pass plus the attention products over the growing context
+            r.memory["full_prompt_tokens"] = ctx
+            r.memory["full_prompt_s"] = round(ctx / r.prefill_rate + r.prefill_quad * ctx * ctx / 2, 1)
         return r
     except ValueError as e:
         p.errors.append(str(e))
@@ -285,6 +292,7 @@ def _strata(p, args, model, gpus, cpu, info):
         # work and KV on card 1; the extra cards add cache (hit rate) but their experts arrive at link speed.
         peer_cache_gb = sum(g["spec"]["vram_gb"] * 0.9 for g in gpus[1:])
         p.notes.append(f"peer-device: {len(gpus) - 1} card(s) as expert tier, {peer_cache_gb:.0f} GB behind the PCIe link")
+        args["_peer_gpus"] = gpus[1:]
         gpus = gpus[:1]
         args["_peer_cache_gb"] = peer_cache_gb
     bpw = _bpw(args, "iq3_s", model)
@@ -314,10 +322,19 @@ def _strata(p, args, model, gpus, cpu, info):
         p.errors.append("the dense weights, KV and slots do not fit; no room for an expert cache")
     ec = int(args.get("expert_cache_mib", 0) or 0)
     if ec > 0:
+        room = min(cache_per_card) if cache_per_card else 0.0
+        if ec / 1024 > room + 0.05:
+            p.errors.append(f"expert_cache_mib asks for {ec / 1024:.1f} GB per card; after weights, KV and overhead there is room for {room:.1f} GB")
         cache_total = min(cache_total, ec / 1024 * len(gpus))
     cache_total += float(args.get("_peer_cache_gb", 0.0)) * 0.5     # peer experts: counted at half, they stream over PCIe
     held = min(1.0, cache_total / experts_gb)
     hit = 1 - (1 - held) ** HIT_SKEW
+    hit_override = (getattr(_SPEC.get(), "fixed", None) or {}).get("hit_rate")
+    try:
+        if hit_override not in (None, "") and 0 < float(hit_override) <= 1:
+            hit = float(hit_override)            # set by hand under "fixed allocations": drives the speeds as well as the graphic
+    except (TypeError, ValueError):
+        pass
     # bandwidths
     gpu_bw = [_gpu_bw(g) for g in gpus]
     ram_bw = cpu["ram_bw_gbs"]
@@ -417,9 +434,14 @@ def _strata(p, args, model, gpus, cpu, info):
     per_card_tps = [_gpu_flops(g) * STRATA_FLOPS_EFF / (2 * model["active_b"] * 1e9) for g in gpus]
     # stages overlap chunks only partly (measured 1 : 1.5 : 1.8 on 1 / 2 / 3 cards)
     compute_tps = min(per_card_tps) * n_cards / (1 + 0.33 * (n_cards - 1))
-    stream_s = experts_gb * (1 - held) / pcie_bw          # non-resident experts stream once per chunk
-    p.prefill_rate = chunk / (chunk / compute_tps + stream_s)
-    p.prefill_quad = _attention_quad(model, sum(_gpu_flops(g) for g in gpus) * STRATA_FLOPS_EFF)
+    stream_s = experts_gb * (1 - held) / (pcie_bw * STRATA_PREFILL_LINK_EFF)   # non-resident experts stream once per chunk
+    # Strata prefetches the next layer's experts while the current one computes: the longer of the two sets the pace,
+    # the shorter one is hidden except for STRATA_PREFILL_EXPOSED of it (fitted on the box: 1, 2 and 3 cards)
+    t_compute = chunk / compute_tps
+    p.prefill_rate = chunk / (max(t_compute, stream_s) + STRATA_PREFILL_EXPOSED * min(t_compute, stream_s))
+    # no separate attention term for Strata: on the box a 115K prompt reads at the same rate as a short one (35 s vs
+    # 3,300 tok/s), so the attention cost of this hybrid model (12 of 48 layers attend) is already inside the fitted rate
+    p.prefill_quad = 0.0
     p.overhead_s = 0.7
     p.window = ctx
     p.cache_convs = 1 + p.parking + (slots if slots > 1 else 0)
@@ -429,7 +451,7 @@ def _strata(p, args, model, gpus, cpu, info):
                                             experts_gb=experts_gb, kv_gb_per_slot=kv_gb_per_slot, kv_cells=kv_cells, ctx=ctx, slots=slots,
                                             trim=trim, cache_per_card=cache_per_card, held=held, hit=hit, decode_total=p.decode_total,
                                             prefill_rate=p.prefill_rate, pcie_bw=pcie_bw, tps_card_bound=max(card_bound.values()),
-                                            cpu_stream=cpu_stream,
+                                            cpu_stream=cpu_stream, hit_guessed=1 - (1 - held) ** HIT_SKEW, peer_gpus=args.get("_peer_gpus", ()),
                                             miss_via_pcie=(miss_bw == pcie_miss_bw and pcie_miss_bw > cpu_stream) or str(args.get("pcie_frac", "auto")) == "1")
     except Exception as e:  # noqa: BLE001 - the layout is an aid; never break the derivation for it
         p.notes.append(f"layout not available: {type(e).__name__}: {e}")
@@ -465,7 +487,9 @@ def _attention_quad(model, flops):
     """Seconds per new token per context token for the attention products (QK^T and PV),
     4 * layers * hidden FLOPs, at the engine's effective FLOP rate."""
     layers = model.get("attn_layers", model["layers"]) or 1
-    hidden = (model["params_b"] * 1e9 / (12 * max(1, model["layers"]))) ** 0.5
+    # hidden size from the parameters that run per token: for a MoE model the experts inflate params_b but not the
+    # width of the attention (Flash-Next: ~4K from 10B active, not ~15K from 125B)
+    hidden = (model.get("active_b", model["params_b"]) * 1e9 / (12 * max(1, model["layers"]))) ** 0.5
     return 4 * layers * hidden / max(1.0, flops)
 
 

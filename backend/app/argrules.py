@@ -70,11 +70,16 @@ def evaluate(engine: str, version: str, args: dict, n_gpus: int, gpu_specs: list
                 _state(s, "batch_mtp", disabled=True, force=(False if version == "0.1.43.1" else "off"),
                        reason="the pipelined path runs no slot drafts; set --batch-groups 1 for serial windows with --batch-mtp")
         pm, ps = int(a.get("parking_mib", 0) or 0), int(a.get("parking_slots", 0) or 0)
-        if (pm > 0) != (ps > 0):
+        # one full parked conversation: its K/V at the context window (int8) plus the recurrent state
+        from .layout import conversation_mib
+        conv_mib = conversation_mib(model, int(a.get("context", 32768) or 32768))
+        if (pm > 0) != (ps > 0) and conv_mib > 0:
             if pm > 0:
-                _state(s, "parking_slots", force=max(1, batch * 2), reason="parking RAM without parked conversations does nothing")
+                fit = max(1, int(pm // conv_mib))
+                _state(s, "parking_slots", force=fit, reason=f"parking RAM without a count does nothing; {fit} full conversations fit in it")
             else:
-                _state(s, "parking_mib", force=4096, reason="parked conversations need parking RAM")
+                need = int(round(ps * conv_mib / 1024 + 0.5)) * 1024
+                _state(s, "parking_mib", force=need, reason=f"{ps} parked conversations need about {need} MiB at this context")
         ctx = int(a.get("context", 32768) or 32768)
         if int(a.get("kv_resident", 0) or 0) > ctx:
             _state(s, "kv_resident", force=0, reason="above the context window: all cells resident anyway")

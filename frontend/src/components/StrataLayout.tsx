@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { NumInput } from "./ui";
 
-export type LayoutBox = { kind: string; label: string; gb: number; exact: boolean; slots?: number };
+export type LayoutBox = { kind: string; label: string; gb: number; exact: boolean; slots?: number; used_share?: number };
 export type Layout = {
   cards: { id: string; name: string; capacity_gb: number; boxes: LayoutBox[]; total_gb: number; overshoot_gb: number; cache_gb: number }[];
   pools: { cpu: number; name: string; capacity_gb: number; boxes: LayoutBox[]; total_gb: number; overshoot_gb: number; ram_bw_gbs: number;
@@ -35,11 +35,25 @@ function group(boxes: LayoutBox[]): { box: LayoutBox; parts?: LayoutBox[] }[] {
 
 const fmt = (gb: number) => gb.toFixed(gb < 1 ? 2 : 1);
 
-function OverheadDetail({ parts, total, side }: { parts: LayoutBox[]; total: number; side: "left" | "right" }) {
+/** One stripe per full conversation, each as wide as its share of the parking box; what no conversation can use is pale. */
+function parkingStripes(n: number, used: number): string {
+  const w = (used * 100) / n, stops: string[] = [];
+  for (let i = 0; i < n; i++) {
+    const a = i * w, b = (i + 1) * w;
+    stops.push(`transparent ${a}%`, `transparent ${b - Math.min(0.6, w * 0.15)}%`, `rgba(255,255,255,.75) ${b - Math.min(0.6, w * 0.15)}%`, `rgba(255,255,255,.75) ${b}%`);
+  }
+  stops.push(`rgba(243,245,244,.82) ${used * 100}%`, `rgba(243,245,244,.82) 100%`);
+  return `linear-gradient(90deg, ${stops.join(", ")})`;
+}
+
+function OverheadDetail({ parts, total, at }: { parts: LayoutBox[]; total: number; at: DOMRect }) {
   const H = Math.max(160, parts.length * 30);
+  const W = 320, M = 8;
+  const right = at.right + M + W <= window.innerWidth;
+  const left = right ? at.right + M : Math.max(M, at.left - M - W);
+  const top = Math.max(M, Math.min(at.top, window.innerHeight - H - 90));
   return (
-    <div className={`absolute top-0 z-30 w-80 rounded-md border border-line bg-panel p-3 text-xs shadow-lg ${side === "left" ? "right-full mr-2" : "left-full ml-2"}`}
-         role="tooltip">
+    <div className="fixed z-50 w-80 rounded-md border border-line bg-panel p-3 text-xs shadow-lg" style={{ left, top }} role="tooltip">
       <div className="font-medium">overhead · {fmt(total)} GB</div>
       <div className="mt-2 flex flex-col overflow-hidden rounded border border-line" style={{ height: H }}>
         {[...parts].reverse().map((p, i) => (
@@ -54,11 +68,11 @@ function OverheadDetail({ parts, total, side }: { parts: LayoutBox[]; total: num
   );
 }
 
-function Stack({ title, note, capacity, boxes, total, overshoot, compact, popSide, links }: {
+function Stack({ title, note, capacity, boxes, total, overshoot, compact, links }: {
   title: string; note: string; capacity: number; boxes: LayoutBox[]; total: number; overshoot: number; compact: boolean;
-  popSide: "left" | "right"; links?: ReactNode;
+  links?: ReactNode;
 }) {
-  const [hover, setHover] = useState(false);
+  const [hover, setHover] = useState<DOMRect | null>(null);
   const scale = Math.max(capacity, total);
   const grouped = group(boxes);
   return (
@@ -73,16 +87,16 @@ function Stack({ title, note, capacity, boxes, total, overshoot, compact, popSid
             const body = (
               <div className={`flex h-full items-center overflow-hidden px-1 text-[10px] leading-tight ${b.exact ? "" : "border-y border-dashed border-white/50"}`}
                    style={{ background: COLORS[b.kind] ?? "#999", color: DARK_TEXT.has(b.kind) ? "#2b2f2d" : "white",
-                            backgroundImage: b.kind === "parking" && b.slots ? `repeating-linear-gradient(90deg, transparent 0 ${100 / b.slots - 2}%, rgba(255,255,255,.6) ${100 / b.slots - 2}% ${100 / b.slots}%)` : undefined }}>
+                            backgroundImage: b.kind === "parking" && b.slots ? parkingStripes(b.slots, b.used_share ?? 1) : undefined }}>
                 {share > 0.025 && <span className="truncate">{b.label} · {fmt(b.gb)}</span>}
               </div>
             );
             return parts ? (
               <div key={i} className="relative cursor-help" style={{ height: `${share * 100}%`, minHeight: 6 }}
                    title={`overhead ${fmt(b.gb)} GB: ` + parts.map((p) => `${p.label} ${fmt(p.gb)} GB`).join(" · ")}
-                   onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)} data-testid="overhead-block">
+                   onMouseEnter={(ev) => setHover((ev.currentTarget as HTMLElement).getBoundingClientRect())} onMouseLeave={() => setHover(null)} data-testid="overhead-block">
                 {body}
-                {hover && <OverheadDetail parts={parts} total={b.gb} side={popSide} />}
+                {hover && <OverheadDetail parts={parts} total={b.gb} at={hover} />}
               </div>
             ) : (
               <div key={i} style={{ height: `${share * 100}%` }} title={`${b.label}: ${b.gb.toFixed(2)} GB${b.exact ? "" : " (estimate)"}`}>{body}</div>
@@ -131,12 +145,12 @@ export default function StrataLayout({ layout, fixed, onFixed, hitGuessed, compa
     <div className="mt-2 flex flex-col gap-1" style={{ height: rows * 46 + (rows - 1) * 4 }}>{ls.map((l, i) => <Link key={i} l={l} />)}</div>
   );
   const stacks = [
-    ...layout.cards.map((c, i) => (
-      <Stack key={c.id} compact={compact} popSide={i === 0 ? "right" : "right"} title={`${c.id} · ${c.name}`} note={`expert cache ${c.cache_gb.toFixed(1)} GB`}
+    ...layout.cards.map((c) => (
+      <Stack key={c.id} compact={compact} title={`${c.id} · ${c.name}`} note={`expert cache ${c.cache_gb.toFixed(1)} GB`}
              capacity={c.capacity_gb} boxes={c.boxes} total={c.total_gb} overshoot={c.overshoot_gb} links={compact ? linkArea(cardLinks(c.id)) : undefined} />
     )),
     ...layout.pools.map((p) => (
-      <Stack key={`pool-${p.cpu}`} compact={compact} popSide="left" title={`host RAM · ${p.name}`}
+      <Stack key={`pool-${p.cpu}`} compact={compact} title={`host RAM · ${p.name}`}
              note={p.parking ? `parking fits ${p.parking.fits_full} full conversations (${p.parking.per_full_conversation_gb.toFixed(2)} GB each, limited by ${p.parking.limited_by})` : "no parking"}
              capacity={p.capacity_gb} boxes={p.boxes} total={p.total_gb} overshoot={p.overshoot_gb} links={compact ? linkArea(poolLinks) : undefined} />
     )),

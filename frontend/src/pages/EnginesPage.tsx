@@ -230,14 +230,19 @@ export default function EnginesPage() {
                       <div className={side(e) ? "grid grid-cols-[auto_1fr_auto_1fr] gap-x-3 gap-y-0.5" : "grid grid-cols-2 gap-x-3 gap-y-1"}>
                         <span className="text-muted">reads prompts</span><span>{Math.round(d.prefill_rate).toLocaleString()} tok/s</span>
                         <span className="text-muted">writes, alone</span><span>{d.decode_total["1"]?.toFixed(0)} tok/s</span>
-                        {Object.entries(d.decode_total).filter(([k]) => k !== "1").slice(0, 4).map(([k, v]) => (
-                          <><span key={`l${k}`} className="text-muted">writes, {k} at once</span><span key={`v${k}`}>{v.toFixed(0)} tok/s total · {(v / Number(k)).toFixed(0)} each</span></>
+                        {typeof d.memory.full_prompt_s === "number" && <><span className="text-muted">full {Math.round((d.memory.full_prompt_tokens as number) / 1024)}K prompt</span><span>~{(d.memory.full_prompt_s as number) < 120 ? `${(d.memory.full_prompt_s as number).toFixed(0)} s` : `${((d.memory.full_prompt_s as number) / 60).toFixed(1)} min`} to read</span></>}
+                        {speedRows(d.decode_total, Number(e.args.batch ?? e.args.parallel ?? e.args.max_num_seqs ?? 1)).map(([k, v, configured]) => (
+                          <><span key={`l${k}`} className={configured ? "font-medium" : "text-muted"}>writes, {k} at once{configured ? " (set)" : ""}</span><span key={`v${k}`} className={configured ? "font-medium" : undefined}>{v.toFixed(0)} tok/s total · {(v / Number(k)).toFixed(0)} each</span></>
                         ))}
                         {typeof d.memory.hit === "number" && <><span className="text-muted">expert cache</span><span>{(d.memory.held as number * 100).toFixed(0)} % held, {(d.memory.hit as number * 100).toFixed(0)} % hits</span></>}
                         {typeof d.memory.kv_room_tokens === "number" && <><span className="text-muted">KV room</span><span>{Math.round((d.memory.kv_room_tokens as number) / 1000)}K tokens</span></>}
-                        {typeof d.memory.host_ram_gb === "number" && <><span className="text-muted">host RAM</span><span>{String(d.memory.host_ram_gb)} GB</span></>}
+                        {d.layout?.pools?.[0] ? (
+                          <><span className="text-muted">{d.layout.cards.length ? "host RAM" : "unified memory"}</span><span>{d.layout.pools[0].total_gb.toFixed(1)} of {d.layout.pools[0].capacity_gb.toFixed(0)} GB</span></>
+                        ) : typeof d.memory.host_ram_gb === "number" && <><span className="text-muted">host RAM</span><span>{String(d.memory.host_ram_gb)} GB</span></>}
                       </div>
-                      {Object.entries(d.memory).filter(([, v]) => typeof v === "object" && v && "vram_gb" in (v as object)).map(([k, v]) => {
+                      {d.layout ? (
+                        <div className="mt-2 text-xs text-muted">{d.layout.cards.map((c) => `${c.id}: expert cache ${c.cache_gb.toFixed(1)} of ${c.capacity_gb.toFixed(0)} GB`).join(" · ")}</div>
+                      ) : Object.entries(d.memory).filter(([, v]) => typeof v === "object" && v && "vram_gb" in (v as object)).map(([k, v]) => {
                         const m = v as { vram_gb: number; used_gb: number };
                         return <div key={k} className="mt-2 text-xs text-muted">{k}: {m.used_gb} of {m.vram_gb} GB VRAM</div>;
                       })}
@@ -287,13 +292,21 @@ function packArg(a: ArgDef, packs?: string[]): ArgDef {
   return { ...a, options: options.length ? options : a.options, default: packs[0], help: packs.length === 1 ? "the only pack this model comes in" : a.help };
 }
 
+/** "writes, N at once" rows: 2, the middle and the configured count — never hide the one that is set. */
+function speedRows(table: Record<string, number>, set: number): [string, number, boolean][] {
+  const keys = Object.keys(table).map(Number).filter((n) => n > 1).sort((a, b) => a - b);
+  if (!keys.length) return [];
+  const want = new Set([keys[0], keys[Math.floor((keys.length - 1) / 2)], Math.min(set, keys[keys.length - 1])].filter((n) => n > 1));
+  return keys.filter((n) => want.has(n)).map((n) => [String(n), table[String(n)], n === set]);
+}
+
 type ArgState = { disabled: boolean; force: unknown; reason: string };
 
 /** One argument. `state` comes from the rules the engine itself applies: a greyed-out field has no effect in this
  *  setup; a forced value is what the engine would use regardless of what is set. The reason is shown under it. */
 function ArgField({ a, value, state, onChange, dense = false }: { a: ArgDef; value: unknown; state?: ArgState; onChange: (v: unknown) => void; dense?: boolean }) {
   const forced = state?.force !== null && state?.force !== undefined;
-  const v = forced ? state!.force : (value ?? a.default);
+  const v = value ?? a.default;          // what is set; a forced value is shown in the hint ("→ x"), the field stays editable
   const off = Boolean(state?.disabled);
   const hint = state?.reason ? <span className={off || forced ? "text-amber" : undefined}>{state.reason}{forced ? ` → ${String(state!.force)}` : ""}</span>
     : <span className={dense ? "line-clamp-2" : undefined} title={a.help}>{a.help}</span>;
@@ -303,13 +316,13 @@ function ArgField({ a, value, state, onChange, dense = false }: { a: ArgDef; val
     </Field>
   );
   if (a.type === "bool") return wrap(
-    <input type="checkbox" className="h-4 w-4" aria-label={a.name} checked={Boolean(v)} disabled={off || forced} onChange={(e) => onChange(e.target.checked)} />
+    <input type="checkbox" className="h-4 w-4" aria-label={a.name} checked={Boolean(v)} disabled={off} onChange={(e) => onChange(e.target.checked)} />
   );
   if (a.type === "choice") return wrap(
-    <Select ariaLabel={a.name} disabled={off || forced} value={String(v)} options={(a.options ?? []).map((o) => ({ value: o, label: o }))} onChange={onChange} />
+    <Select ariaLabel={a.name} disabled={off} value={String(v)} options={(a.options ?? []).map((o) => ({ value: o, label: o }))} onChange={onChange} />
   );
   return wrap(
     <NumInput aria-label={a.name} value={Number(v)} min={a.min} max={a.max} step={a.type === "float" ? 0.05 : 1} int={a.type !== "float"}
-              disabled={off || forced} onChange={(n) => onChange(n)} />
+              disabled={off} onChange={(n) => onChange(n)} />
   );
 }
