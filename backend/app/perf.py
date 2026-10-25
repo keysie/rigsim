@@ -20,15 +20,28 @@ from . import argrules, layout as layout_mod
 
 GPU_BW_EFF = 0.75          # share of spec bandwidth a decode kernel achieves (27B AWQ on a 3090: 39 tok/s; 8B Q4_0: 167)
 GPU_FLOPS_EFF = 0.50       # share of FP16 tensor peak a prefill achieves (dense models; llama.cpp pp512 8B: ~0.68 on 3090/4090)
-STRATA_FLOPS_EFF = 0.41    # Strata's MoE prompt path (box at a 250 W cap, 4090 / 5090 reports uncapped)
-STRATA_PREFILL_LINK_EFF = 0.5    # share of the link rate expert streaming reaches during prompt reading (fitted)
-STRATA_PREFILL_EXPOSED = 0.15   # share of the shorter of compute / expert streaming that prefetching does not hide
-HIT_SKEW = 4.0             # routing is skewed: hit = 1 - (1 - held)^HIT_SKEW
+STRATA_FLOPS_EFF = 0.6    # Strata's MoE prompt path (box at a 250 W cap, 4090 / 5090 reports uncapped)
+STRATA_PREFILL_LINK_EFF = 0.5    # prompt reading: share of the CPU expert path's rate the missing experts get (fitted)
+STRATA_STAGE_CHUNK_S = 0.25      # per stage per prompt chunk, beyond compute and streaming (fitted: 1 / 2 / 3 cards)
+STRATA_SMALL_CHUNK = 300         # below ~this many tokens a chunk's missing experts run on the CPU instead of streaming
+STRATA_REQUEST_S = 0.15          # per request: admission, tokenising, first sample
+STRATA_READ_DECODE_PIPELINED = 0.06   # writing while a prompt is read, as a share of the slots' time-share (two groups)
+STRATA_READ_DECODE_SERIAL = 0.45      # the same, one group or one card (the read borrows the expert cache)
+# decode vs power cap, as measured on a 3090 (pass 3, one card: 89.3 / 98.6 / 103.5 tok/s at 220 / 250 / 300 W): flat
+# above ~250 W, steep below. Cap / TDP -> share of the uncapped rate; other cards use their own cap ratio.
+STRATA_POWER_CURVE = [(0.629, 0.854), (0.714, 0.943), (0.857, 0.99), (1.0, 1.0)]
+STRATA_DEPTH_MS_PER_KROW = 0.04  # decode: ms per window per row per 1K tokens of context (attention + DeltaNet state)
+STRATA_DEPTH_REF = 4096          # the decode table is for this depth; deeper conversations write slower
+STRATA_SPLIT_FIRST_WEIGHT = 1.087   # a layer on the first card costs this much more (embeddings, vision, sampling)
+STRATA_SPLIT_AUTO_SHARE = 0.583     # Strata's auto split on two equal cards: 28 of 48 layers on the first
+HIT_SKEW = 5.5             # routing is skewed: hit = 1 - (1 - held)^HIT_SKEW (pass 2: held 0.33 -> hit 0.87-0.95 measured)
 CPU_EXPERT_GBS_PER_CORE = 3.0   # fallback when a CPU has no ISA data
 CPU_EXPERT_RAM_SHARE = 0.60     # expert compute uses at most this share of the memory pool bandwidth
 PCIE_SMALL_COPY_EFF = 0.5       # expert-miss copies are small; they reach about half the link rate
 LAYER_OVERHEAD_MS = 0.02   # kernel launches per layer per step, dense engines
-STRATA_LAYER_MS = 0.13     # per layer per window: launches, DeltaNet and sparse-attention kernels (calibrated)
+STRATA_ROW_COST = 0.5     # extra kernel time per additional row in a window, relative to one row (fitted, pass 6)
+STRATA_GROUP_OVERHEAD = 2.0   # pipelined groups: per-group time relative to an even share of one window (fitted, pass 6)
+STRATA_LAYER_MS = 0.12     # per layer per window: launches, DeltaNet and sparse-attention kernels (calibrated)
 HANDOFF_MS = 0.6           # layer-split hand-off per stage per window
 MTP_TOKENS_PER_WINDOW = 2.8
 BATCH_MTP_TOKENS_PER_ROW = 1.66
@@ -46,6 +59,12 @@ class EnginePerf:
     decode_total: dict[int, float] = field(default_factory=dict)   # n parallel -> total tok/s
     speed_per_request: dict[int, float] = field(default_factory=dict)
     overhead_s: float = 0.5
+    prompt_chunk: int = 0          # Strata: prompt read per chunk = streaming floor + compute (0 = plain rate model)
+    prompt_stream_s: float = 0.0
+    prompt_compute_tps: float = 0.0
+    read_decode_factor: float = 1.0    # writing while a prompt is read (Strata borrows the expert cache)
+    decode_depth_ref: int = 0          # depth the decode table is for; the slope below scales it per conversation
+    decode_depth_s_per_krow: float = 0.0
     first_token_s: float = 0.0
     max_parallel: int = 1
     cache_convs: int = 1
@@ -60,6 +79,32 @@ class EnginePerf:
     limits: dict = field(default_factory=dict)   # resource -> share of a window's time
     resources: dict = field(default_factory=dict)  # gpus, cpu, cores
     hosted_prices: dict = field(default_factory=dict)
+
+    def prompt_seconds(self, n: int) -> float:
+        """Time to read n new prompt tokens. Strata: each chunk streams the missing experts once (a floor that a short
+        follow-up pays almost in full; tiny chunks run those experts on the CPU instead) plus its compute."""
+        n = max(0, int(n))
+        if not self.prompt_chunk or self.prompt_compute_tps <= 0:
+            return n / max(1.0, self.prefill_rate) + self.overhead_s
+        t, left = self.overhead_s, n
+        while left > 0:
+            k = min(left, self.prompt_chunk)
+            t += self.prompt_stream_s * min(1.0, k / STRATA_SMALL_CHUNK) + k / self.prompt_compute_tps
+            left -= k
+        return t
+
+    def decode_at(self, n: int, depth: float) -> float:
+        """Total writing with n slots busy, at a conversation depth (tokens of context): the decode table is for
+        decode_depth_ref; each row of a window pays decode_depth_s_per_krow per 1K tokens beyond it."""
+        from .sim.engines import interp
+        total = interp(self.decode_total, n)
+        if not (self.decode_depth_s_per_krow and self.decode_depth_ref) or total <= 0:
+            return total
+        solo = n == 1 and self.decode_total.get(1, 0) > self.decode_total.get(2, 0) * 0.6
+        rows, toks = (4, 2.8) if solo else (n, float(n))
+        window = toks / total
+        extra = rows * (depth - self.decode_depth_ref) / 1000 * self.decode_depth_s_per_krow
+        return total * window / max(1e-9, window + extra)
 
     def public(self) -> dict:
         d = self.__dict__.copy()
@@ -183,7 +228,10 @@ def derive(spec, machine_info) -> EnginePerf:
         if ctx and r.prefill_rate > 0 and not r.errors:
             # reading a prompt that fills the window: the weights pass plus the attention products over the growing context
             r.memory["full_prompt_tokens"] = ctx
-            r.memory["full_prompt_s"] = round(ctx / r.prefill_rate + r.prefill_quad * ctx * ctx / 2, 1)
+            r.memory["full_prompt_s"] = round(r.prompt_seconds(ctx) + r.prefill_quad * ctx * ctx / 2, 1)
+            r.memory["followup_2k_s"] = round(r.prompt_seconds(2048) + r.prefill_quad * 2048 * min(ctx, 32768), 1)
+        if r.decode_depth_s_per_krow and r.decode_total and not r.errors:
+            r.memory["decode_1_at_32k"] = round(r.decode_at(1, 32768), 1)
         return r
     except ValueError as e:
         p.errors.append(str(e))
@@ -297,6 +345,9 @@ def _strata(p, args, model, gpus, cpu, info):
         args["_peer_cache_gb"] = peer_cache_gb
     bpw = _bpw(args, "iq3_s", model)
     slots = int(args["batch"])
+    caps = [(g.get("power_w") or g["spec"]["tdp_w"]) / g["spec"]["tdp_w"] for g in gpus if g["spec"].get("tdp_w")]
+    r_pow = min(1.0, min(caps)) if caps else 1.0
+    power_decode = _strata_power_decode(r_pow)
     ctx = int(args["context"])
     dense_gb = model["params_b"] * (1 - model["expert_share"]) * bpw / 8
     experts_gb = model["params_b"] * model["expert_share"] * bpw / 8
@@ -385,7 +436,7 @@ def _strata(p, args, model, gpus, cpu, info):
     if kv_cells < ctx:
         p.notes.append(f"KV streaming: beyond {kv_cells // 1024}K tokens a slot's K/V lives in host RAM and crosses the link every window")
 
-    def window_time(rows: int, drafts: bool, hit_: float | None = None) -> float:
+    def window_time(rows: int, drafts: bool, hit_: float | None = None, slots_rows: bool = False) -> float:
         """Seconds for one verify window over all cards with `rows` rows (hit_=1.0: as if every expert were resident)."""
         h = hit if hit_ is None else hit_
         t = 0.0
@@ -397,7 +448,9 @@ def _strata(p, args, model, gpus, cpu, info):
             # KV streaming: every window re-reads each slot's non-resident K/V over the link; this is what makes a
             # 128K context fit in VRAM and also what caps its speed
             t += kv_streamed_gb * max(1, rows // solo_rows_hint) / pcie_bw
-        t += model["layers"] * STRATA_LAYER_MS / 1000 * (1 + 0.15 * (rows - 1))
+        # rows of different slots pull different experts; one conversation's MTP rows mostly share theirs
+        t += model["layers"] * STRATA_LAYER_MS / 1000 * (1 + (STRATA_ROW_COST if slots_rows else 0.15) * (rows - 1))
+        t += rows * STRATA_DEPTH_REF / 1000 * STRATA_DEPTH_MS_PER_KROW / 1000
         t += HANDOFF_MS / 1000 * (n_cards - 1)
         if drafts:
             t += 0.0015            # drafter on the last card
@@ -411,15 +464,28 @@ def _strata(p, args, model, gpus, cpu, info):
     for n in range(2, slots + 1):
         if pipelined:
             rows = max(1, n // ngroups)
-            t = window_time(rows, False)
+            t = window_time(rows, False, slots_rows=True)
             # groups overlap across cards: throughput of one card-time per group instead of the sum
-            per_group = t / n_cards * 1.6   # stage imbalance, hand-offs and small groups (measured ~60 % overhead)
+            per_group = t / n_cards * STRATA_GROUP_OVERHEAD   # stage imbalance, hand-offs and small groups (fitted, pass 6)
             d[n] = n / (per_group * ngroups) if ngroups <= n_cards else n / t
             d[n] = min(d[n], n / (t / n_cards))
         elif batch_mtp:
-            d[n] = n * BATCH_MTP_TOKENS_PER_ROW / window_time(2 * n, True)
+            d[n] = n * BATCH_MTP_TOKENS_PER_ROW / window_time(2 * n, True, slots_rows=True)
         else:
-            d[n] = n / window_time(n, False)
+            d[n] = n / window_time(n, False, slots_rows=True)
+    if pipelined:
+        L = model["layers"]
+        def bottleneck(first):
+            rest = (L - first) / max(1, n_cards - 1)
+            return max(first * STRATA_SPLIT_FIRST_WEIGHT, rest)
+        auto_first = round(L * STRATA_SPLIT_AUTO_SHARE) if n_cards == 2 else round(L / n_cards)
+        ls = int(args.get("layer_split", 0) or 0)
+        first = min(L - (n_cards - 1), max(1, ls)) if ls else auto_first
+        split_f = bottleneck(auto_first) / bottleneck(first)
+        if ls:
+            p.notes.append(f"layer split {first}/{L - first}: pipelined writing x{split_f:.2f} against the auto split ({auto_first})")
+        d = {n: (v * split_f if n > 1 else v) for n, v in d.items()}
+    d = {n: v * power_decode for n, v in d.items()}
     sf = float(model.get("speed_factor", 1.0) or 1.0)
     if sf != 1.0:
         d = {n: v * sf for n, v in d.items()}
@@ -431,18 +497,28 @@ def _strata(p, args, model, gpus, cpu, info):
         p.notes.append("parking slots set without a RAM budget: parking stays off")
         p.parking = 0
     chunk = int(args.get("prefill_chunk", 8192))
-    per_card_tps = [_gpu_flops(g) * STRATA_FLOPS_EFF / (2 * model["active_b"] * 1e9) for g in gpus]
-    # stages overlap chunks only partly (measured 1 : 1.5 : 1.8 on 1 / 2 / 3 cards)
-    compute_tps = min(per_card_tps) * n_cards / (1 + 0.33 * (n_cards - 1))
-    stream_s = experts_gb * (1 - held) / (pcie_bw * STRATA_PREFILL_LINK_EFF)   # non-resident experts stream once per chunk
+    # quantised matrix products run on the INT8 tensor cores (twice the FP16 rate on these architectures)
+    per_card_tps = [2 * _gpu_flops(g) * STRATA_FLOPS_EFF / (2 * model["active_b"] * 1e9) for g in gpus]
+    # a chunk passes the stages one after the other: one card's compute rate, whatever the card count (pass 1/2/4:
+    # the long-read gain of more cards comes from streaming less, not from computing in parallel)
+    compute_tps = min(per_card_tps)
+    # per chunk: the experts not in VRAM are worked through once on the CPU's expert path (not PCIe-bound: the Blower
+    # on x8 reads as fast as a x16 card, pass 5), plus a fixed cost per stage
+    stream_s = experts_gb * (1 - held) / (cpu_stream * STRATA_PREFILL_LINK_EFF) + STRATA_STAGE_CHUNK_S * n_cards
     # Strata prefetches the next layer's experts while the current one computes: the longer of the two sets the pace,
     # the shorter one is hidden except for STRATA_PREFILL_EXPOSED of it (fitted on the box: 1, 2 and 3 cards)
-    t_compute = chunk / compute_tps
-    p.prefill_rate = chunk / (max(t_compute, stream_s) + STRATA_PREFILL_EXPOSED * min(t_compute, stream_s))
+    p.prompt_chunk, p.prompt_stream_s, p.prompt_compute_tps = chunk, stream_s, compute_tps
+    p.prefill_rate = chunk / (stream_s + chunk / compute_tps)          # a long prompt, chunk after chunk
     # no separate attention term for Strata: on the box a 115K prompt reads at the same rate as a short one (35 s vs
     # 3,300 tok/s), so the attention cost of this hybrid model (12 of 48 layers attend) is already inside the fitted rate
     p.prefill_quad = 0.0
-    p.overhead_s = 0.7
+    p.overhead_s = STRATA_REQUEST_S
+    p.read_decode_factor = STRATA_READ_DECODE_PIPELINED if pipelined else STRATA_READ_DECODE_SERIAL
+    p.decode_depth_ref = STRATA_DEPTH_REF
+    p.decode_depth_s_per_krow = STRATA_DEPTH_MS_PER_KROW / 1000
+    if slots > 1:
+        p.notes.append(f"writing figures for {slots} slots are while all of them write; while a prompt is read they write "
+                       f"at about {100 * p.read_decode_factor / 3:.0f} % of that (the read borrows the expert cache)")
     p.window = ctx
     p.cache_convs = 1 + p.parking + (slots if slots > 1 else 0)
     p.memory = _memory_report(gpus, used)
@@ -481,6 +557,19 @@ def _strata(p, args, model, gpus, cpu, info):
         p.notes.append("pipeline-windows is off: needs a split and no batch slots")
     p.resources = dict(gpus=[g["id"] for g in gpus], cpu=cpu["name"], cores=cores)
     return p
+
+
+def _strata_power_decode(r: float) -> float:
+    pts = STRATA_POWER_CURVE
+    if r >= pts[-1][0]:
+        return pts[-1][1]
+    if r <= pts[0][0]:
+        (r0, f0), (r1, f1) = pts[0], pts[1]
+        return max(0.3, f0 - (f1 - f0) / (r1 - r0) * (r0 - r))      # below the measured range: the last slope continues
+    for (r0, f0), (r1, f1) in zip(pts, pts[1:]):
+        if r0 <= r <= r1:
+            return f0 + (f1 - f0) * (r - r0) / (r1 - r0)
+    return 1.0
 
 
 def _attention_quad(model, flops):

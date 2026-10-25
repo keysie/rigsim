@@ -115,7 +115,7 @@ it("rebuilds the AI server through the UI and checks that changes matter", async
   await openPage("#machine");
   await screen.findByText(/48 of 48 PCIe lanes/, {}, { timeout: 10000 });
   const mm = structuredClone(useStore.getState().machine);
-  mm.devices.forEach((d) => { if (d.model_id === "rtx-3090") d.model_id = "rtx-4090"; });
+  mm.devices.forEach((d) => { if (d.model_id === "rtx-3090") { d.model_id = "rtx-4090"; d.power_w = null; } });   // as the machine page does: a new card starts at its own limit
   mm.nvlinks = [];
   useStore.getState().setMachine(mm);
   await screen.findByText(/no NVLink on this model/, {}, { timeout: 10000 });

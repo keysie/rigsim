@@ -103,8 +103,12 @@ class StrataEngine(Engine):
         self.prefill_total += tok
         if job.reread:
             self.reread_tokens += tok
-        job.prefill_left = tok + self.overhead_tokens
-        job.prate = _prate(self.P, self.perf.prefill_quad, tok, job.req.context)
+        if self.perf.prompt_chunk:
+            job.prefill_left = self.perf.prompt_seconds(tok) * self.P      # the read's time, in tokens at the nominal rate
+            job.prate = self.P
+        else:
+            job.prefill_left = tok + self.overhead_tokens
+            job.prate = _prate(self.P, self.perf.prefill_quad, tok, job.req.context)
         job.out_left = job.req.out
         job.t_admit = now
         conv = job.req.conv
@@ -123,7 +127,10 @@ class StrataEngine(Engine):
         for j in pre:
             self.rates[id(j)] = (getattr(j, "prate", self.P) * fp, 0.0)
         if dec:
-            total = interp(self.D, len(dec)) * ((1.0 - fp) if pre else 1.0)
+            total = interp(self.D, len(dec)) * (((1.0 - fp) * self.perf.read_decode_factor) if pre else 1.0)
+            if self.perf.decode_depth_s_per_krow and self.perf.decode_depth_ref:
+                depth = sum(j.req.context for j in dec) / len(dec)      # deeper conversations write slower
+                total *= self.perf.decode_at(len(dec), depth) / max(1e-9, interp(self.D, len(dec)))
             for j in dec:
                 self.rates[id(j)] = (0.0, total / len(dec))
 

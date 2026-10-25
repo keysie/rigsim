@@ -96,8 +96,8 @@ Forty-one further points were **held out**: more cells from the same machine, St
 on 3090 / 4090), and across the prebuilts: M1 Ultra, M3 Ultra, M4 Max, M5 Max and M5 Ultra in other
 formats and in prompt processing (llama.cpp discussion #4167), Strix Halo prompt processing and a 27B dense
 model with and without MTP plus the RX 7900 XTX (ROCm scoreboard #15021), and the Spark's prompt rate
-(#16578). Result: 19 of 19 calibration points and 38 of 42 held-out points within ±30 %, median error
-9 % and 13 %, worst held-out miss 43 % (the 5090 and 2 × RTX 4000 Ada prompt rates; see below). `backend/tests/test_validation.py` keeps the model inside those
+(#16578). Result: 28 of 28 calibration points and 50 of 54 held-out points within ±30 %, median error
+7 % and 12 %, worst held-out miss 36 % (Strata prompts read in 16K / 32K chunks; see below).py` keeps the model inside those
 bounds; the *Calibration data* page recomputes the whole table from the current code.
 
 **On tasks per hour.** A "task" here is whatever the workload ranges describe; a better model finishes a
@@ -114,12 +114,27 @@ every number would be a guess that no measurement set could validate. The refere
 card between its judge and its guard; the example configuration therefore leaves the judge role empty rather
 than pretend. If you need that layout, measure it.
 
-**Strata's prompt path** is the least certain part. It reads compute and expert streaming as overlapping (Strata
-prefetches the next layer's experts while one computes), fitted on the reference box with one, two and three cards
-and on the 4090 report. That reproduces the box within 12 %, a 115K prompt within 11 %, but overestimates the 5090
-and 2 × RTX 4000 Ada reports by about 43 %: those cards compute less efficiently on this path than their specs say.
+**Strata on the reference box** is calibrated on raw requests and engine traces of bench passes 1–6, not on their
+summaries. What the model now follows, because the box showed it:
 
-What this does **not** cover: models other than the ones in the catalog (sizes are spec-sheet figures and
+- **Prompt reading works per chunk:** the experts not in VRAM go through the CPU's expert path once per chunk, plus
+  a fixed cost per stage, plus compute on the INT8 tensor cores; the stages of a split take a chunk one after the
+  other. A short follow-up therefore pays almost a whole chunk's floor (one 3090: ~3 s for 1–7K tokens); a tiny
+  chunk (tens of tokens) runs its experts on the CPU instead. More cards read faster because they hold more experts.
+- **While a prompt is read, the slots barely write:** the read borrows the expert cache. About 2 % of the normal rate
+  with two pipeline groups, about 15 % serial or on one card (Strata's `STRATA_BATCH_DECODE_SHARE` gives the slots a
+  third of the time, but at that rate).
+- **Writing depends on the power cap** as measured on a 3090 (flat above ~250 W, steep below; other cards use their
+  own cap ratio on the same curve, which is likely pessimistic for newer architectures), **on depth** (deeper
+  conversations write slower) and, for pipelined groups, **on the layer split** (`layer_split`: on two 3090s 22–24
+  of 48 layers on the first card beat Strata's auto choice of 28 by ~15 %).
+- **Several slots saturate early:** rows from different conversations each pull their own experts; on two 3090s at
+  ~36K depth eight slots write ~117–138 tok/s in total, four about as much.
+
+Known misses: prompts read in 16K / 32K chunks come out ~30 % too fast (measured gains from bigger chunks are much
+smaller than the per-chunk floor suggests); the Blower (x8) writes ~23 % faster than modelled; 2 × TITAN RTX +25–32 %.
+
+What this does **not** cover:What this does **not** cover: models other than the ones in the catalog (sizes are spec-sheet figures and
 parameter counts, not measurements), GPUs the reports did not include (spec-sheet bandwidth with the same
 efficiency constants), the power-cap curve beyond one card and one cap (the box's 3090s at 250 W; the
 curve's shape is a guess until capped measurement records arrive), Strata on unified memory (no public measurement exists; the CPU expert path on NEON
