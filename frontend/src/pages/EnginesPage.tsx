@@ -121,7 +121,7 @@ export default function EnginesPage() {
                               onChange={(v) => patch(e.id, (x) => { x.version = v; x.args = {}; })} />
                     </Field>
                     <Field label="Model" hint={catalog.models.find((m) => m.id === e.model_id)?.note}>
-                      <Select value={e.model_id} options={models.map((m) => ({ value: m.id, label: m.name }))}
+                      <Select className="w-full min-w-0 max-w-full truncate" value={e.model_id} options={models.map((m) => ({ value: m.id, label: m.name }))}
                               onChange={(m) => patch(e.id, (x) => { x.model_id = m; })} />
                     </Field>
                     <button className="btn ml-auto border-red/40 text-red" onClick={() => remove(e.id)}>Remove engine</button>

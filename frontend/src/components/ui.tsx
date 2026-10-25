@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 
 export function Field({ label, children, hint }: { label: string; children: ReactNode; hint?: ReactNode }) {
   return (
-    <label className="flex flex-col gap-1">
+    <label className="flex min-w-0 max-w-full flex-col gap-1">
       <span>{label}</span>
       {children}
       {hint && <span className="text-xs text-muted">{hint}</span>}
