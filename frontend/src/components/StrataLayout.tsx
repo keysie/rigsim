@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { NumInput } from "./ui";
 
 export type LayoutBox = { kind: string; label: string; gb: number; exact: boolean; slots?: number };
@@ -17,13 +17,14 @@ const COLORS: Record<string, string> = {
 const LEGEND: [string, string][] = [["dense", "dense weights"], ["experts", "experts (cache / pack)"], ["kv", "KV cache"], ["parking", "parked conversations"],
   ["scratch", "scratch"], ["overhead", "context, display, OS"], ["reserve", "kept free"], ["foreign", "other engines"]];
 
-function Stack({ title, capacity, boxes, total, overshoot, note }: { title: string; capacity: number; boxes: LayoutBox[]; total: number; overshoot: number; note?: string }) {
+function Stack({ title, capacity, boxes, total, overshoot, note, compact, children }: { title: string; capacity: number; boxes: LayoutBox[]; total: number;
+  overshoot: number; note?: string; compact?: boolean; children?: ReactNode }) {
   const scale = Math.max(capacity, total);
   return (
-    <div className="min-w-[150px] flex-1">
+    <div className={`${compact ? "min-w-[130px]" : "min-w-[150px]"} flex-1`}>
       <div className="text-sm font-medium">{title}</div>
       <div className="text-xs text-muted">{total.toFixed(1)} of {capacity.toFixed(0)} GB{note ? ` · ${note}` : ""}</div>
-      <div className={`relative mt-1 h-56 w-full rounded border ${overshoot > 0 ? "border-red" : "border-line"} bg-paper`} title={`${title}: ${total.toFixed(1)} of ${capacity} GB`}>
+      <div className={`relative mt-1 ${compact ? "h-44" : "h-56"} w-full rounded border ${overshoot > 0 ? "border-red" : "border-line"} bg-paper`} title={`${title}: ${total.toFixed(1)} of ${capacity} GB`}>
         <div className="absolute inset-x-0 bottom-0 flex flex-col-reverse" style={{ height: `${(total / scale) * 100}%` }}>
           {boxes.map((b, i) => (
             <div key={i} title={`${b.label}: ${b.gb.toFixed(2)} GB${b.exact ? "" : " (estimate)"}`}
@@ -43,6 +44,7 @@ function Stack({ title, capacity, boxes, total, overshoot, note }: { title: stri
           </>
         )}
       </div>
+      {children ? <div className="mt-2 flex flex-col gap-1">{children}</div> : null}
     </div>
   );
 }
@@ -54,7 +56,7 @@ function Link({ l }: { l: Layout["links"][number] }) {
     <div className={`rounded border px-2 py-1 text-xs ${over ? "border-red bg-red-soft" : "border-line bg-paper"}`} title={Object.entries(l.parts).map(([k, v]) => `${k}: ${v.toFixed(1)} GB/s`).join("\n")}>
       <div className="flex items-center gap-2">
         <span className="font-medium">{l.a} ↔ {l.b}</span>
-        <span className="text-muted">{l.kind.toUpperCase()} · {l.capacity_gbs.toFixed(1)} GB/s usable</span>
+        <span className="text-muted">{l.kind.toUpperCase()} {l.capacity_gbs.toFixed(1)} GB/s</span>
         <span className={`ml-auto font-semibold ${over ? "text-red" : ""}`}>{over ? `oversubscribed by ${pct - 100} %` : `worst case ${pct} %`}</span>
       </div>
       <div className="mt-1 h-1.5 w-full rounded bg-line">
@@ -64,8 +66,9 @@ function Link({ l }: { l: Layout["links"][number] }) {
   );
 }
 
-export default function StrataLayout({ layout, fixed, onFixed, hitGuessed }: {
+export default function StrataLayout({ layout, fixed, onFixed, hitGuessed, compact = false }: {
   layout: Layout; fixed: Record<string, number | null>; onFixed: (f: Record<string, number | null>) => void; hitGuessed: number;
+  compact?: boolean;   // side by side with the settings: link bars under their stacks, shorter stacks
 }) {
   const [open, setOpen] = useState(false);
   const bad = layout.cards.some((c) => c.overshoot_gb > 0) || layout.pools.some((p) => p.overshoot_gb > 0) || layout.links.some((l) => l.ratio > 1);
@@ -81,13 +84,23 @@ export default function StrataLayout({ layout, fixed, onFixed, hitGuessed }: {
         </div>
       )}
       {!layout.headline.length && <div className="mt-2 text-xs text-mask-deep">everything fits; no link above its usable rate in the worst case</div>}
-      <div className="mt-3 flex flex-wrap gap-4">
-        {layout.cards.map((c) => <Stack key={c.id} title={`${c.id} · ${c.name}`} capacity={c.capacity_gb} boxes={c.boxes} total={c.total_gb} overshoot={c.overshoot_gb} note={`cache ${c.cache_gb.toFixed(1)} GB`} />)}
-        <div className="flex w-56 flex-col justify-center gap-2">
-          {layout.links.map((l, i) => <Link key={i} l={l} />)}
-        </div>
-        {layout.pools.map((p) => <Stack key={p.cpu} title={`host RAM · ${p.name}`} capacity={p.capacity_gb} boxes={p.boxes} total={p.total_gb} overshoot={p.overshoot_gb}
-                                        note={p.parking ? `parking fits ${p.parking.fits_full} full conversations (${p.parking.per_full_conversation_gb.toFixed(2)} GB each, limited by ${p.parking.limited_by})` : "no parking"} />)}
+      <div className={`mt-3 flex flex-wrap ${compact ? "gap-3" : "gap-4"}`}>
+        {layout.cards.map((c) => (
+          <Stack key={c.id} compact={compact} title={`${c.id} · ${c.name}`} capacity={c.capacity_gb} boxes={c.boxes} total={c.total_gb} overshoot={c.overshoot_gb} note={`cache ${c.cache_gb.toFixed(1)} GB`}>
+            {compact ? layout.links.filter((l) => l.a === c.id).map((l, i) => <Link key={i} l={l} />) : null}
+          </Stack>
+        ))}
+        {!compact && (
+          <div className="flex w-56 flex-col justify-center gap-2">
+            {layout.links.map((l, i) => <Link key={i} l={l} />)}
+          </div>
+        )}
+        {layout.pools.map((p) => (
+          <Stack key={p.cpu} compact={compact} title={`host RAM · ${p.name}`} capacity={p.capacity_gb} boxes={p.boxes} total={p.total_gb} overshoot={p.overshoot_gb}
+                 note={p.parking ? `parking fits ${p.parking.fits_full} full conversations (${p.parking.per_full_conversation_gb.toFixed(2)} GB each, limited by ${p.parking.limited_by})` : "no parking"}>
+            {compact ? layout.links.filter((l) => !layout.cards.some((c) => c.id === l.a)).map((l, i) => <Link key={i} l={l} />) : null}
+          </Stack>
+        ))}
       </div>
       <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted">
         {LEGEND.map(([k, t]) => <span key={k} className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: COLORS[k] }} />{t}</span>)}

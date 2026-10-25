@@ -29,5 +29,20 @@ await page.goto(BASE + "#machine"); await page.waitForSelector("text=/PCIe lanes
 await page.getByLabel("display on gpu-1").check(); await page.waitForTimeout(800);
 await page.goto(BASE + "#engines"); await page.waitForSelector("text=writes, alone", { timeout: 60000 }); await page.waitForTimeout(1500);
 ok((await page.getByTestId("strata-layout").locator('[title*="display / desktop"]').count()) === 1, "the display checkbox adds a display box on that card");
+// wide windows: settings and graphic side by side, both on one screen; narrower windows: graphic below
+for (const [w, h, side] of [[1920, 1080, true], [1600, 900, true], [1440, 900, false]]) {
+  const pg = await browser.newPage({ viewport: { width: w, height: h } });
+  await pg.goto(BASE + "#engines"); await pg.waitForSelector("text=writes, alone", { timeout: 120000 }); await pg.waitForTimeout(2000);
+  await pg.locator("section").first().evaluate((el) => el.scrollIntoView({ block: "start" })); await pg.waitForTimeout(300);
+  const m = await pg.evaluate(() => {
+    const sec = document.querySelector("section"); const lay = sec.querySelector("[data-testid=strata-layout]");
+    const grid = [...sec.querySelectorAll("div.grid")].filter((g) => g.querySelector("[aria-label=batch]")).pop();
+    const r = lay.getBoundingClientRect(), s = sec.getBoundingClientRect();
+    return { right: r.left > s.left + s.width / 3, settings: grid.getBoundingClientRect().bottom, graphic: r.bottom, vh: innerHeight };
+  });
+  if (side) ok(m.right && m.settings <= m.vh && m.graphic <= m.vh, `${w}x${h}: settings and graphic side by side, both in view (${Math.round(m.settings)} / ${Math.round(m.graphic)} of ${m.vh} px)`);
+  else ok(!m.right, `${w}x${h}: the graphic sits below the settings`);
+  await pg.close();
+}
 ok(errors.length === 0, "no uncaught page errors");
 await browser.close(); console.log(`all ${step} layout checks passed`);
