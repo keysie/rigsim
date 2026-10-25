@@ -22,14 +22,11 @@ def test_boxes_fill_the_card_exactly_when_the_cache_is_automatic():
     assert not L["headline"]
 
 
-def test_other_engine_on_the_card_shows_as_foreign_and_shrinks_the_cache():
+def test_a_second_engine_on_the_card_is_refused():
     guard = {"id": "g", "engine": "llama.cpp", "version": "b11552", "model_id": "ministral-3-3b", "gpus": ["gpu-2"], "cpu_cores": 1,
              "args": {"quantization": "q8_0", "parallel": 1, "ctx_size": 32768}}
-    alone = strata({"batch": 4})["layout"]["cards"][1]
-    shared = strata({"batch": 4}, extra=[guard])["layout"]["cards"][1]
-    foreign = [b for b in shared["boxes"] if b["kind"] == "foreign"]
-    assert foreign and foreign[0]["gb"] > 3
-    assert shared["cache_gb"] < alone["cache_gb"] - 3
+    r = strata({"batch": 4}, extra=[guard])
+    assert any("one engine per card" in e for e in r["errors"])
 
 
 def test_parking_counts_full_conversations_and_names_the_limit():
@@ -60,8 +57,13 @@ def test_overshoot_is_reported_loudly():
 def test_worst_case_link_load_responds_to_the_hit_rate():
     low = strata({"batch": 8, "expert_cache_mib": 2048}, fixed={"hit_rate": 0.3})["layout"]
     high = strata({"batch": 8, "expert_cache_mib": 2048}, fixed={"hit_rate": 0.95})["layout"]
-    assert low["links"][0]["ratio"] > high["links"][0]["ratio"] * 2
-    assert any("oversubscribed" in h for h in low["headline"])
+    worst = lambda L: max(l["ratio"] for l in L["links"])  # noqa: E731
+    assert worst(low) > worst(high) * 2
+    assert any("oversubscribed" in h and "actually runs at" in h for h in low["headline"])
+    # the expert path that carries the misses is named: CPU compute in the default mode, the PCIe link in copy mode
+    assert any(l["a"] == "cpu expert path" for l in low["links"])
+    copy = strata({"batch": 8, "expert_cache_mib": 2048, "pcie_frac": "1"}, fixed={"hit_rate": 0.3})["layout"]
+    assert not any(l["a"] == "cpu expert path" for l in copy["links"]) and copy["links"][0]["ratio"] > 1
 
 
 def test_fixed_overrides_change_the_boxes():

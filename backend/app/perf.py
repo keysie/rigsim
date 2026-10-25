@@ -351,13 +351,14 @@ def _strata(p, args, model, gpus, cpu, info):
     if kv_cells < ctx:
         p.notes.append(f"KV streaming: beyond {kv_cells // 1024}K tokens a slot's K/V lives in host RAM and crosses the link every window")
 
-    def window_time(rows: int, drafts: bool) -> float:
-        """Seconds for one verify window over all cards with `rows` rows."""
+    def window_time(rows: int, drafts: bool, hit_: float | None = None) -> float:
+        """Seconds for one verify window over all cards with `rows` rows (hit_=1.0: as if every expert were resident)."""
+        h = hit if hit_ is None else hit_
         t = 0.0
         for bw in gpu_bw:
             t += (active_dense_gb / n_cards) / bw
-            t += (active_expert_gb / n_cards) * rows * hit / bw
-        t += active_expert_gb * rows * (1 - hit) / miss_bw
+            t += (active_expert_gb / n_cards) * rows * h / bw
+        t += active_expert_gb * rows * (1 - h) / miss_bw
         if kv_streamed_gb > 0:
             # KV streaming: every window re-reads each slot's non-resident K/V over the link; this is what makes a
             # 128K context fit in VRAM and also what caps its speed
@@ -371,6 +372,8 @@ def _strata(p, args, model, gpus, cpu, info):
     solo_rows = 4 if mtp else 1
     d = {}
     d[1] = (MTP_TOKENS_PER_WINDOW if mtp else 1.0) / window_time(solo_rows, mtp)
+    # what the cards alone could do with every expert resident: the demand the expert path has to keep up with
+    card_bound = {n: (n if n > 1 else 1) * (MTP_TOKENS_PER_WINDOW if (mtp and n == 1) else 1.0) / window_time(solo_rows if n == 1 else n, mtp and n == 1, hit_=1.0) for n in range(1, slots + 1)}
     for n in range(2, slots + 1):
         if pipelined:
             rows = max(1, n // ngroups)
@@ -405,7 +408,9 @@ def _strata(p, args, model, gpus, cpu, info):
         p.layout = layout_mod.strata_layout(spec=_SPEC.get(), args=args, model=model, gpus=gpus, cpu=cpu, info=info, dense_gb=dense_gb,
                                             experts_gb=experts_gb, kv_gb_per_slot=kv_gb_per_slot, kv_cells=kv_cells, ctx=ctx, slots=slots,
                                             trim=trim, cache_per_card=cache_per_card, held=held, hit=hit, decode_total=p.decode_total,
-                                            prefill_rate=p.prefill_rate, pcie_bw=pcie_bw)
+                                            prefill_rate=p.prefill_rate, pcie_bw=pcie_bw, tps_card_bound=max(card_bound.values()),
+                                            cpu_stream=cpu_stream,
+                                            miss_via_pcie=(miss_bw == pcie_miss_bw and pcie_miss_bw > cpu_stream) or str(args.get("pcie_frac", "auto")) == "1")
     except Exception as e:  # noqa: BLE001 - the layout is an aid; never break the derivation for it
         p.notes.append(f"layout not available: {type(e).__name__}: {e}")
     p.memory["expert_cache_gb"] = round(cache_total, 1)

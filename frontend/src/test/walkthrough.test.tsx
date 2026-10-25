@@ -68,26 +68,26 @@ it("rebuilds the AI server through the UI and checks that changes matter", async
   await waitFor(() => expect(useStore.getState().engines[0].args.parking_slots).toBe(8));
   const parked = await simulate("A: parking 8 GiB / 8 conversations on the maker");
 
-  // --- 4. Change B: judge with thinking (reasoning model) instead of Granite ---------
+  // --- 4. Change B: the guard with a bigger model on the 3060 -------------------------------
   await openPage("#engines");
   await screen.findAllByText(/writes, alone/, {}, { timeout: 10000 });
-  const judge = screen.getByDisplayValue("Judge").closest("section")!;
-  await userEvent.selectOptions(within(judge).getAllByRole("combobox")[2], "qwen3.8-27b");
-  await within(judge).findByText(/does not fit|needs/, {}, { timeout: 10000 }).catch(() => undefined);
-  say(`   judge -> 27B on the 3060: ${judge.querySelector("aside")?.textContent?.replace(/\s+/g, " ").slice(0, 140)}`);
-  await userEvent.selectOptions(within(judge).getAllByRole("combobox")[2], "granite-4.2-8b");
+  const guard = screen.getByDisplayValue("Guard").closest("section")!;
+  await userEvent.selectOptions(within(guard).getAllByRole("combobox")[2], "qwen3.8-27b");
+  await within(guard).findByText(/does not fit|needs/, {}, { timeout: 10000 }).catch(() => undefined);
+  say(`   guard -> 27B on the 3060: ${guard.querySelector("aside")?.textContent?.replace(/\s+/g, " ").slice(0, 140)}`);
+  await userEvent.selectOptions(within(guard).getAllByRole("combobox")[2], "ministral-3-3b");
 
   // --- 5. Change C: layout A3 — Strata on one card, 27B TP2 on two, judge = 27B ---------
   await openPage("#engines");
   await screen.findAllByText(/writes, alone/, {}, { timeout: 10000 });
   strata = screen.getByDisplayValue("Strata maker").closest("section")!;
-  await userEvent.click(within(strata).getByRole("button", { name: /^gpu-1/ }));   // off
-  await userEvent.click(within(strata).getByRole("button", { name: /^gpu-2/ }));   // off
-  await userEvent.click(within(strata).getByRole("button", { name: /^gpu-3/ }));   // on
-  fireEvent.change(within(strata).getByLabelText("batch"), { target: { value: "1" } });
   const sub = screen.getByDisplayValue("vLLM 27B").closest("section")!;
-  await userEvent.click(within(sub).getByRole("button", { name: /^gpu-3/ }));      // off
-  await userEvent.click(within(sub).getByRole("button", { name: /^gpu-1/ }));
+  await userEvent.click(within(sub).getByRole("button", { name: /^gpu-3/ }));      // vLLM frees gpu-3 first: one engine per card
+  await userEvent.click(within(strata).getByRole("button", { name: /^gpu-1/ }));   // Strata off its pair...
+  await userEvent.click(within(strata).getByRole("button", { name: /^gpu-2/ }));
+  await userEvent.click(within(strata).getByRole("button", { name: /^gpu-3/ }));   // ...onto gpu-3
+  fireEvent.change(within(strata).getByLabelText("batch"), { target: { value: "1" } });
+  await userEvent.click(within(sub).getByRole("button", { name: /^gpu-1/ }));      // vLLM takes the freed pair
   await userEvent.click(within(sub).getByRole("button", { name: /^gpu-2/ }));
   await userEvent.selectOptions(within(sub).getByLabelText("tensor_parallel"), "2");
   await waitFor(() => expect(useStore.getState().engines[1].gpus).toEqual(["gpu-1", "gpu-2"]));

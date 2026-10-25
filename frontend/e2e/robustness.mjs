@@ -80,7 +80,7 @@ ok(/tok\/s/.test(aside) && !/tensor_parallel/.test(aside), "switching Strata -> 
 await page.getByRole("button", { name: "Add engine" }).click(); await page.waitForTimeout(1500);
 const last = page.locator("section").last();
 ok(!/no GPU assigned/.test(await last.innerText()), "a new engine starts on a GPU instead of with an error");
-await card("Judge").locator('input[type="text"]').first().fill("Guard"); await page.waitForTimeout(500);
+await card("vLLM 27B").locator('input[type="text"]').first().fill("Guard"); await page.waitForTimeout(500);
 await page.goto(BASE + "#roles"); await page.waitForSelector("text=Concurrent workstreams", { timeout: 60000 }); await page.waitForTimeout(800);
 const ropts = await page.locator("section select").first().locator("option").allInnerTexts();
 ok(new Set(ropts).size === ropts.length, "engines with the same name stay distinguishable in the role lists");

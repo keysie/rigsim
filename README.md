@@ -102,6 +102,15 @@ task in fewer turns and fewer retries, so the same hardware yields more tasks pe
 simulator cannot know that from the hardware, which is why the levers exist and why the machine-level
 tokens per second, watts and utilisation are the numbers to compare machines by.
 
+**Explicitly out of scope: sharing a card or the CPU's cores between engines.** Every GPU holds exactly one
+engine, and the engines on a CPU cannot ask for more cores together than it has; the interface refuses both
+and the model reports them as errors. Two engines on one card interact through kernel scheduling, memory
+contention, VRAM fragmentation and each engine's own reservation logic (Strata's `--vram-reserve-later-mib`,
+vLLM's `gpu_memory_utilization`, a desktop compositor on the side) — a space of details with no end, where
+every number would be a guess that no measurement set could validate. The reference machine itself shares a
+card between its judge and its guard; the example configuration therefore leaves the judge role empty rather
+than pretend. If you need that layout, measure it.
+
 What this does **not** cover: models other than the ones in the catalog (sizes are spec-sheet figures and
 parameter counts, not measurements), GPUs the reports did not include (spec-sheet bandwidth with the same
 efficiency constants), the power-cap curve beyond one card and one cap (the box's 3090s at 250 W; the
