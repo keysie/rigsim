@@ -101,7 +101,7 @@ export default function App() {
           <div className="hidden md:block">Everything is kept in this browser. <button className="underline" onClick={() => { if (confirm("Start over with the example machine?")) reset(); }}>Start over</button></div>
         </div>
       </aside>
-      <main className="px-5 py-6 md:px-10 max-w-6xl">
+      <main className={`px-5 py-6 md:px-10 ${page === "engines" ? "max-w-6xl min-[1500px]:max-w-[1880px]" : "max-w-6xl"}`}>
         {error && <div className="mb-4 rounded bg-red-soft px-3 py-2 text-sm text-red">The catalog did not load: {error}</div>}
         {(boot === "stale" || staleBuild) && (
           <div className="mb-4 flex items-center justify-between rounded bg-amber-soft px-3 py-2 text-sm text-amber" role="alert">

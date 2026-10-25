@@ -34,6 +34,9 @@ export default function EnginesPage() {
     return () => clearTimeout(t);
   }, [machine, engines]);
 
+  const wide = useWide();
+  const side = (e: EngineSpec) => wide && e.engine === "strata";
+
   const useCluster = (id: string, c: Cluster) => patch(id, (x) => {
     const b = { ...(x.benchmarks ?? {}) };
     for (const [k, v] of Object.entries(c.results)) if (k !== "hit") b[k] = v.median;
@@ -104,7 +107,7 @@ export default function EnginesPage() {
           engines.forEach((o) => { if (o.id !== e.id) o.gpus.forEach((g) => usedGpus.set(g, o.name || o.id)); });
           return (
             <section key={e.id} className="rounded-lg border border-line bg-panel">
-              <div className="grid gap-5 p-5 lg:grid-cols-[3fr_2fr]">
+              <div className={`grid gap-5 p-5 ${side(e) ? "grid-cols-[minmax(0,1fr)_minmax(0,1fr)]" : "lg:grid-cols-[3fr_2fr]"}`}>
                 <div>
                   <div className="flex flex-wrap items-end gap-3">
                     <Field label="Name"><input type="text" value={e.name} onChange={(ev) => patch(e.id, (x) => { x.name = ev.target.value; })} /></Field>
@@ -161,10 +164,10 @@ export default function EnginesPage() {
                   )}
 
                   <div className="mt-4 grid gap-x-4 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
-                    {args.map((a) => <ArgField key={a.name} a={a} value={e.args[a.name]} state={d?.arg_states?.[a.name]}
+                    {args.map((a) => <ArgField key={a.name} dense={side(e)} a={a} value={e.args[a.name]} state={d?.arg_states?.[a.name]}
                                                onChange={(v) => patch(e.id, (x) => { x.args = { ...x.args, [a.name]: v }; })} />)}
                   </div>
-                  {e.engine === "strata" && d?.layout && (
+                  {e.engine === "strata" && d?.layout && !side(e) && (
                     <StrataLayout layout={d.layout} hitGuessed={d.layout.hit_guessed} fixed={e.fixed ?? {}}
                                   onFixed={(f) => patch(e.id, (x) => { x.fixed = f; })} />
                   )}
@@ -207,6 +210,11 @@ export default function EnginesPage() {
                   </details>
                 </div>
 
+                <div className={side(e) ? "sticky top-4 flex flex-col gap-3 self-start" : undefined}>
+                {side(e) && d?.layout && (
+                  <StrataLayout compact layout={d.layout} hitGuessed={d.layout.hit_guessed} fixed={e.fixed ?? {}}
+                                onFixed={(f) => patch(e.id, (x) => { x.fixed = f; })} />
+                )}
                 <aside className="rounded border border-line bg-paper p-4 text-sm">
                   {!d ? <span className="text-muted">Calculating…</span> : d.errors.length ? (
                     <ul className="text-red">{d.errors.map((x, i) => <li key={i}>{x}</li>)}</ul>
@@ -231,6 +239,7 @@ export default function EnginesPage() {
                     </>
                   )}
                 </aside>
+                </div>
               </div>
             </section>
           );
@@ -247,15 +256,29 @@ export function measuredLabel(k: string): string {
   return { prefill: "reads", kv_room_tokens: "KV room", hit: "cache hit" }[k] ?? k;
 }
 
+/** Wide enough to show a Strata card's settings and its memory graphic side by side. */
+function useWide(query = "(min-width: 1500px)") {
+  const [wide, setWide] = useState(() => typeof window !== "undefined" && !!window.matchMedia?.(query).matches);
+  useEffect(() => {
+    const mq = window.matchMedia?.(query);
+    if (!mq) return;
+    const on = () => setWide(mq.matches);
+    mq.addEventListener?.("change", on);
+    return () => mq.removeEventListener?.("change", on);
+  }, [query]);
+  return wide;
+}
+
 type ArgState = { disabled: boolean; force: unknown; reason: string };
 
 /** One argument. `state` comes from the rules the engine itself applies: a greyed-out field has no effect in this
  *  setup; a forced value is what the engine would use regardless of what is set. The reason is shown under it. */
-function ArgField({ a, value, state, onChange }: { a: ArgDef; value: unknown; state?: ArgState; onChange: (v: unknown) => void }) {
+function ArgField({ a, value, state, onChange, dense = false }: { a: ArgDef; value: unknown; state?: ArgState; onChange: (v: unknown) => void; dense?: boolean }) {
   const forced = state?.force !== null && state?.force !== undefined;
   const v = forced ? state!.force : (value ?? a.default);
   const off = Boolean(state?.disabled);
-  const hint = state?.reason ? <span className={off || forced ? "text-amber" : undefined}>{state.reason}{forced ? ` → ${String(state!.force)}` : ""}</span> : a.help;
+  const hint = state?.reason ? <span className={off || forced ? "text-amber" : undefined}>{state.reason}{forced ? ` → ${String(state!.force)}` : ""}</span>
+    : dense ? <span className="line-clamp-2" title={a.help}>{a.help}</span> : a.help;
   const wrap = (child: ReactNode) => (
     <Field label={a.name} hint={hint}>
       <div className={off ? "opacity-50" : undefined}>{child}</div>
