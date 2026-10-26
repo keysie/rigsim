@@ -1,7 +1,7 @@
 # Overhaul of the engine model
 
 Working document for the branch `overhaul-of-engine`. Points we want to establish before anything is built.
-Status: **draft, under discussion**. Nothing here is decided until marked so.
+Status: sections marked *agreed* are decided (2026-10-26); everything else is under discussion.
 
 ## Goal
 
@@ -34,11 +34,12 @@ Speeds, waits and limits should emerge from hardware resources, engine operation
 5. **Calibration and validation:** which primitives to measure on which hardware, which end-to-end runs validate
    which layer.
 
-## Decided so far
+## Decided so far (agreed)
 
-- **Clean split between engines and hardware.** An engine never knows what card it runs on; it states demands
-  (compute of a kind on the device holding a stage, bytes moved between memory pools, memory to allocate). The
-  hardware model answers durations and memory fit for everything running at the same moment.
+- **Clean split between engines and hardware.** An engine never knows how fast its hardware is; it may read
+  descriptors (see "Rates and efficiency factors") and states demands (compute of a kind on the device holding a
+  stage, bytes moved between memory pools, memory to allocate). The hardware model alone answers durations and
+  memory fit for everything running at the same moment.
 - **Modular hardware as a graph.** Cards, CPU sockets, RAM pools and SSDs are nodes with resources; PCIe slots, the
   chipset uplink, NVLink, socket links and external links are edges. Transfers follow a path; every edge on it is a
   shared resource. New hardware means new nodes and edges, no special cases in engine code.
@@ -63,7 +64,7 @@ Speeds, waits and limits should emerge from hardware resources, engine operation
   at the engine profile: pure reading and pure writing for that engine on that hardware. Workload modelling, and
   Turnstone with it, is a later, optional layer.
 
-## Hardware interface (agreed shape, 2026-10-26)
+## Hardware interface (agreed)
 
 Four primitives; a part (card, CPU, board) is a bundle of them, the machine is the graph they form.
 
@@ -84,7 +85,7 @@ Four primitives; a part (card, CPU, board) is a bundle of them, the machine is t
   non-linearly with the limit, the VRAM clock not at all). CPUs the same (core clock vs package power). Curves for
   parts we have data for; users can upload their own as CSV.
 
-## Engine interface (agreed shape)
+## Engine interface (agreed)
 
 - The engine sees roles (stage device, host memory, expert compute), never parts; a binding layer maps its arguments
   onto hardware objects.
@@ -93,7 +94,7 @@ Four primitives; a part (card, CPU, board) is a bundle of them, the machine is t
 - The hardware returns, per step: duration, busy share per resource, the bottleneck, power drawn. Concurrent
   operations share resources by max-min fair share.
 
-## Rates and efficiency factors
+## Rates and efficiency factors (agreed)
 
 - **Hardware answers per (runtime type and version, operation class):** the achievable rate, defined by the vendor's
   reference library (cuBLAS / cuBLASLt matrix products, a plain copy for bandwidth). Measured with microbenchmarks.
@@ -111,9 +112,16 @@ Four primitives; a part (card, CPU, board) is a bundle of them, the machine is t
   INT8 / FP8 tensor cores, memory sizes). It uses them to pick its kernel path and coefficients. It never sees rates
   or computes durations itself; the hardware model alone does that.
 
+## Hardware yardsticks (for developing the hardware model)
+
+Published measurements with a fully stated configuration, used as microbenchmarks for the hardware layer only:
+memory bandwidth (STREAM-type), memory latency, PCIe / host-device copies, GEMM throughput per runtime. Each entry
+records source, configuration (CPU, DIMMs per channel, speed, threads; card, driver, runtime) and what it tests.
+Collected in `docs/overhaul/yardsticks.md`. The reference box's own microbenchmarks rank first where available.
+
 ## Open questions
 
-
-- Granularity: per layer, per stage, or per operation class?
-- Time model: keep the fluid event simulation and feed it operation costs, or simulate windows and chunks as events?
-- What stays out of scope (already: sharing a card or cores between engines).
+- What stays out of scope (already: sharing a card or cores between engines; CPU caches, NUMA within a socket,
+  instruction-level CPU detail; thermals beyond the power limit).
+- Which microbenchmarks to run on the reference box (memory latency/bandwidth, host-device copies per slot, cuBLAS
+  GEMM per precision, GPU clock vs power limit under compute-heavy and memory-heavy load).
