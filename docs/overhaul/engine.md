@@ -117,7 +117,7 @@ Four primitives; a part (card, CPU, board) is a bundle of them, the machine is t
 Published measurements with a fully stated configuration, used as microbenchmarks for the hardware layer only:
 memory bandwidth (STREAM-type), memory latency, PCIe / host-device copies, GEMM throughput per runtime. Each entry
 records source, configuration (CPU, DIMMs per channel, speed, threads; card, driver, runtime) and what it tests.
-Collected in `docs/overhaul/yardsticks.md`. The reference box's own microbenchmarks rank first where available.
+Collected in `docs/overhaul/yardsticks.md` (first set: Intel MLC on Skylake, Cascade Lake and Ice Lake Xeon nodes). The reference box's own microbenchmarks rank first where available.
 
 ## Open questions
 
