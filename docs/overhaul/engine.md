@@ -77,6 +77,14 @@ Four primitives; a part (card, CPU, board) is a bundle of them, the machine is t
   several flows cross the same link (e.g. everything behind the chipset crosses its uplink).
 - **Router:** joins links; forwarding capacity; optionally linked to a compute object with a cost per byte (copies
   that need CPU cycles, e.g. host bounce buffers) — those cycles compete with the engine's own CPU work.
+- **RAM reads and writes:** DRAM cannot read and write at the same time; modelled as one shared direction. Inference
+  is almost all reads, so this stays rough for now.
+- **Access time is fixed** (no latency-vs-load curve): it depends too much on the situation to benchmark.
+- **CPU package (agreed shape):** each core is its own compute with its own link to the package router; the router
+  links to the RAM channels. A core link's bandwidth is what one core can sustain (measured single-core bandwidth,
+  limited by the requests it keeps in flight), so saturation emerges when enough cores read at once. Identical cores
+  are one object with a count, for speed; hyperthreads are not modelled. Engine workers (e.g. Strata's pool
+  workers) map onto cores, so "how many workers saturate RAM" follows from the model.
 - **In the UI, each storage in the terms users know:** RAM as transfer rate (MT/s), channels and timings
   (translated to bandwidth and access time in the background, with one fixed controller/fabric term per CPU
   family); SSDs directly as bandwidth and access time.
