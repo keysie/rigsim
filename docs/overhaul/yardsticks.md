@@ -50,3 +50,29 @@ RAM (Strata's expert path).
 3. One core cannot saturate memory: its bandwidth is limited by the requests it keeps in flight (Little's law:
    bytes in flight / latency). This couples compute (cores) to storage bandwidth.
 4. The socket link is a separate, much narrower link (34–56 GB/s): a yardstick for the link primitive.
+
+## Identifiability with the agreed model (2026-10-26)
+
+Free parameters per CPU family: RAM efficiency, fixed controller/fabric latency, socket-link latency, socket-link
+efficiency, per-core bandwidth, router forwarding capacity. Per node the MLC output gives 5 usable results (local
+and remote idle latency, local and system read bandwidth, cross-socket bandwidth): 4 parameters fitted, one
+validation (system = 2 x local). Not usable by design: read/write mixes (no turnaround cost in the model: it
+predicts mix = all reads, measured 11–17 % lower), loaded latency (fixed access time), cache-to-cache latencies.
+
+- Per-core bandwidth and router capacity are not identifiable here: every bandwidth test runs all cores.
+- RAM efficiency is confounded with the inferred DIMM speed until the speed is confirmed.
+- Sharing parameters across Skylake and Cascade Lake (same platform) predicts the same local latency; measured
+  90.2 vs 80.8 ns. A fixed latency term per CPU family is too coarse, or something else differs.
+- Total: 8 parameters against 15 usable of 47 published results.
+
+## What a good yardstick source needs
+
+1. The full configuration stated or auto-captured: CPU, DIMM speed, ranks and population, board, OS.
+2. Primitive measurements, not composite scores: latency, bandwidth by core count, single-core bandwidth.
+3. A core ladder (bandwidth at 1, 2, 4, ... cores): the only way to identify the per-core link.
+
+Not suitable: composite scores (cpubenchmark.net / PassMark CPU Mark, Geekbench totals). They mix integer,
+floating-point, compression and other work with undisclosed weights, average user submissions with unknown RAM,
+power limits and cooling, and do not map onto any single primitive.
+Candidates: OpenBenchmarking.org (Phoronix Test Suite captures the system configuration automatically; individual
+tests such as STREAM, Intel MLC, tinymembench), Chips and Cheese (latency and bandwidth by core count, per core type).
