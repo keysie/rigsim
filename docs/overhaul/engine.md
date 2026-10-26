@@ -76,10 +76,13 @@ Four primitives; a part (card, CPU, board) is a bundle of them, the machine is t
   several flows cross the same link (e.g. everything behind the chipset crosses its uplink).
 - **Router:** joins links; forwarding capacity; optionally linked to a compute object with a cost per byte (copies
   that need CPU cycles, e.g. host bounce buffers) — those cycles compete with the engine's own CPU work.
-- **RAM in the UI:** transfer rate (MT/s), channels and timings; translated to bandwidth and access time in the
-  background.
-- **Power:** a part-level property. Curves for parts we have data for; users can upload their own as CSV. Open: which
-  two curves (see below).
+- **In the UI, each storage in the terms users know:** RAM as transfer rate (MT/s), channels and timings
+  (translated to bandwidth and access time in the background, with one fixed controller/fabric term per CPU
+  family); SSDs directly as bandwidth and access time.
+- **Power:** the power limit belongs to the device (card, CPU package). Each primitive in a power-limited device has
+  its own curve: its scalable parameter vs the device's power limit (e.g. a 3090: GPU clock drops quickly and
+  non-linearly with the limit, the VRAM clock not at all). CPUs the same (core clock vs package power). Curves for
+  parts we have data for; users can upload their own as CSV.
 
 ## Engine interface (agreed shape)
 
@@ -93,16 +96,14 @@ Four primitives; a part (card, CPU, board) is a bundle of them, the machine is t
 ## Framework layer
 
 Between engine and hardware sits the framework: the kernel library and runtime an engine version is built on (e.g.
-Strata 0.1.43.1's ggml-CUDA kernels on CUDA 12.x). It holds the only efficiency constants: a small number of linear
-scale factors on the hardware's theoretical rate, per operation class (and per compute architecture). New engine
+Strata 0.1.43.1's ggml-CUDA kernels on CUDA 12.x). It holds the only efficiency constants: linear scale factors on the
+hardware's theoretical rate, keyed by (runtime type and version, kernel type, operation class). A factor may be
+overridden per compute architecture where data shows the need; by default it is shared. New engine
 features are not modelled as such: they arrive as new engine versions, which declare the framework versions they
 need.
 
 ## Open questions
 
-- Power: which two curves per part?
-- Framework identity: is it the kernel library (ggml-CUDA, vLLM/Marlin, ...) on a CUDA version, or the CUDA version alone?
-- RAM access time: timings alone understate it (controller and fabric add most of it); one fixed term per CPU family?
 
 - Granularity: per layer, per stage, or per operation class?
 - Time model: keep the fluid event simulation and feed it operation costs, or simulate windows and chunks as events?
