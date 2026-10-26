@@ -82,8 +82,9 @@ Four primitives; a part (card, CPU, board) is a bundle of them, the machine is t
 - **Access time is fixed** (no latency-vs-load curve): it depends too much on the situation to benchmark.
 - **CPU package (agreed shape):** each core is its own compute with its own link to the package router; the router
   links to the RAM channels. A core link's bandwidth is what one core can sustain (measured single-core bandwidth,
-  limited by the requests it keeps in flight), so saturation emerges when enough cores read at once. Identical cores
-  are one object with a count, for speed; hyperthreads are not modelled. Engine workers (e.g. Strata's pool
+  limited by the requests it keeps in flight), so saturation emerges when enough cores read at once. A package holds
+  any number of core groups (type and count, e.g. P- and E-cores), each group one object with a count, for speed.
+  Hyperthreads (later, if ever): two computes sharing one link to the router. Engine workers (e.g. Strata's pool
   workers) map onto cores, so "how many workers saturate RAM" follows from the model.
 - **In the UI, each storage in the terms users know:** RAM as transfer rate (MT/s), channels and timings
   (translated to bandwidth and access time in the background, with one fixed controller/fabric term per CPU
@@ -128,6 +129,13 @@ records source, configuration (CPU, DIMMs per channel, speed, threads; card, dri
 Collected in `docs/overhaul/yardsticks.md` (first set: Intel MLC on Skylake, Cascade Lake and Ice Lake Xeon nodes). The reference box's own microbenchmarks rank first where available.
 
 ## Open questions
+
+- Strata's CPU expert path is compute-bound per core, not RAM-bound: at a 5 % cache (hit 0.37) writing rose
+  35.7 → 51.1 tok/s from 4 to 9 workers while RAM delivered only 15–18 of 62 GB/s (pass 3, Q8); one card (hit 0.91)
+  still rose at 7–9 workers. Only at hit 0.99 (two cards) did 3 workers suffice. The hardware model must let a core's
+  compute, not its link, be the limit here; the per-core rate for this kernel is a primitive to measure.
+- Prompt reading at that 5 % cache was 239 tok/s at every worker count (PCIe-bound): the prompt path at small caches
+  goes over PCIe, not through the CPU workers (contradicts the CPU-floor reading of PR #14).
 
 - What stays out of scope (already: sharing a card or cores between engines; CPU caches, NUMA within a socket,
   instruction-level CPU detail; thermals beyond the power limit).
