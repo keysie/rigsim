@@ -76,3 +76,22 @@ floating-point, compression and other work with undisclosed weights, average use
 power limits and cooling, and do not map onto any single primitive.
 Candidates: OpenBenchmarking.org (Phoronix Test Suite captures the system configuration automatically; individual
 tests such as STREAM, Intel MLC, tinymembench), Chips and Cheese (latency and bandwidth by core count, per core type).
+
+## Iteration 1 results (branch `overhault-1st-try`, `backend/app/hw/yardsticks/vsc_mlc.py`)
+
+Fitted through the model (one measured value each, mean of the two sockets):
+
+| | fixed latency term | socket-link latency | RAM efficiency | socket-link efficiency |
+|---|---|---|---|---|
+| Skylake | 75.4 ns | 54.1 ns | 0.822 | 0.549 |
+| Cascade Lake | 66.8 ns | 59.8 ns | 0.802 | 0.550 |
+| Ice Lake | 75.3 ns | 53.7 ns | 0.858 | 0.829 |
+
+Held out: system read bandwidth (both sockets at once) −0.4 % / +0.1 % / −0.0 %.
+
+Observations (no model change):
+- Socket-link efficiency 0.55 on both Purley nodes vs 0.83 on Ice Lake. If the Purley boards wire only 2 of the
+  CPU's 3 UPI links, the efficiency would be 0.82 — consistent with Ice Lake. Board wiring is unknown.
+- One fixed latency term per platform is too coarse (Skylake's term on Cascade Lake: +11 % local latency).
+- Statistics: the source publishes one MLC run per node type; the only spread available is between the two sockets
+  (≤ 1.6 %). The validation is consistency, not a statistical test.
