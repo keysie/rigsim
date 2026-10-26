@@ -130,15 +130,10 @@ Collected in `docs/overhaul/yardsticks.md` (first set: Intel MLC on Skylake, Cas
 
 ## Open questions
 
-- Strata's CPU expert path is limited per core, not by RAM: at a 5 % cache (hit 0.37) writing rose 35.7 → 51.1
-  tok/s from 4 to 9 workers while RAM delivered only 15–18 of 62 GB/s (pass 3, Q8); one card (hit 0.91) still rose
-  at 7–9 workers; only at hit 0.99 (two cards) did 3 workers suffice. Open: per-core compute or per-core bandwidth
-  (requests in flight)? Both scale with cores. ~2 GB/s per core is far below typical single-core bandwidth, which
-  points to compute, but the access pattern is not known. Tests that separate the two on the box:
-  - core clock sweep at fixed memory (compute-bound scales with clock, bandwidth-bound barely);
-  - memory speed or channel sweep at fixed clock (the reverse);
-  - per-core stall counters during the run (`perf stat`: cycles stalled on L3 misses vs total);
-  - the expert kernel on one core with weights in cache vs in RAM.
+- **Per-core limits are two primitives of a core type:** compute rate per operation class, and the bandwidth one
+  core sustains (its link to the package router). Each operation's time is the larger of the two; which one binds
+  emerges per operation and per configuration, never fixed by hand. Both are measured per core type with generic
+  methods (single-core streaming read for the link; the kernel on cached data for compute).
 - Prompt reading at that 5 % cache was 239 tok/s at every worker count (PCIe-bound): the prompt path at small caches
   goes over PCIe, not through the CPU workers (contradicts the CPU-floor reading of PR #14).
 
