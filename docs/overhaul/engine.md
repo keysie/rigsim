@@ -63,7 +63,46 @@ Speeds, waits and limits should emerge from hardware resources, engine operation
   at the engine profile: pure reading and pure writing for that engine on that hardware. Workload modelling, and
   Turnstone with it, is a later, optional layer.
 
+## Hardware interface (agreed shape, 2026-10-26)
+
+Four primitives; a part (card, CPU, board) is a bundle of them, the machine is the graph they form.
+
+- **Storage:** capacity, access time, bandwidth. Nothing more. Access patterns are not simulated: the engine model
+  states, from the engine's code, the access size it assumes for an operation; the hardware turns that into an
+  effective rate (size / (access time + size / bandwidth)).
+- **Compute:** clock as a function of power; operation rates per class are multiples of the clock (units x ops per
+  clock per class). No microarchitecture beyond that.
+- **Link:** point to point, simplex or duplex, latency, bandwidth. No multi-master buses. Sharing appears because
+  several flows cross the same link (e.g. everything behind the chipset crosses its uplink).
+- **Router:** joins links; forwarding capacity; optionally linked to a compute object with a cost per byte (copies
+  that need CPU cycles, e.g. host bounce buffers) — those cycles compete with the engine's own CPU work.
+- **RAM in the UI:** transfer rate (MT/s), channels and timings; translated to bandwidth and access time in the
+  background.
+- **Power:** a part-level property. Curves for parts we have data for; users can upload their own as CSV. Open: which
+  two curves (see below).
+
+## Engine interface (agreed shape)
+
+- The engine sees roles (stage device, host memory, expert compute), never parts; a binding layer maps its arguments
+  onto hardware objects.
+- It states allocations (role storage, bytes, purpose), work per step (operations with their class, amount, access
+  size and order: sequence, parallel, pipelined across stages) and its reachable states.
+- The hardware returns, per step: duration, busy share per resource, the bottleneck, power drawn. Concurrent
+  operations share resources by max-min fair share.
+
+## Framework layer
+
+Between engine and hardware sits the framework: the kernel library and runtime an engine version is built on (e.g.
+Strata 0.1.43.1's ggml-CUDA kernels on CUDA 12.x). It holds the only efficiency constants: a small number of linear
+scale factors on the hardware's theoretical rate, per operation class (and per compute architecture). New engine
+features are not modelled as such: they arrive as new engine versions, which declare the framework versions they
+need.
+
 ## Open questions
+
+- Power: which two curves per part?
+- Framework identity: is it the kernel library (ggml-CUDA, vLLM/Marlin, ...) on a CUDA version, or the CUDA version alone?
+- RAM access time: timings alone understate it (controller and fabric add most of it); one fixed term per CPU family?
 
 - Granularity: per layer, per stage, or per operation class?
 - Time model: keep the fluid event simulation and feed it operation costs, or simulate windows and chunks as events?
