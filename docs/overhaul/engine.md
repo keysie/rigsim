@@ -93,14 +93,23 @@ Four primitives; a part (card, CPU, board) is a bundle of them, the machine is t
 - The hardware returns, per step: duration, busy share per resource, the bottleneck, power drawn. Concurrent
   operations share resources by max-min fair share.
 
-## Framework layer
+## Rates and efficiency factors
 
-Between engine and hardware sits the framework: the kernel library and runtime an engine version is built on (e.g.
-Strata 0.1.43.1's ggml-CUDA kernels on CUDA 12.x). It holds the only efficiency constants: linear scale factors on the
-hardware's theoretical rate, keyed by (runtime type and version, kernel type, operation class). A factor may be
-overridden per compute architecture where data shows the need; by default it is shared. New engine
-features are not modelled as such: they arrive as new engine versions, which declare the framework versions they
-need.
+- **Hardware answers per (runtime type and version, operation class):** the achievable rate, defined by the vendor's
+  reference library (cuBLAS / cuBLASLt matrix products, a plain copy for bandwidth). Measured with microbenchmarks.
+- **The engine version holds one dimensionless factor per operation class:** its kernels' speed relative to that
+  reference. Kernels are not a limited set; they change with engine versions, so their quality belongs there.
+- **The reference makes the two separable:** end-to-end runs of one engine only show the product of factor and rate.
+- **A new engine version inherits the previous version's factors**, marked "inherited", until a benchmark confirms
+  or replaces them. It declares the runtime versions it needs.
+- **Unmeasured hardware:** inherit the per-clock rate from a measured card of the same architecture, scaled by clock
+  and unit count; with no data for the architecture, fall back to the spec sheet with one global default
+  efficiency, and mark the result "unmeasured".
+- **Architecture-specific factors are allowed but not pre-emptive:** one factor per engine version and operation class
+  by default; an engine version stores per-architecture factors where benchmarks show the need.
+- **What the engine may know about the hardware:** read-only descriptors (architecture family, capabilities such as
+  INT8 / FP8 tensor cores, memory sizes). It uses them to pick its kernel path and coefficients. It never sees rates
+  or computes durations itself; the hardware model alone does that.
 
 ## Open questions
 
