@@ -1,143 +1,108 @@
-# Overhaul of the engine model
+# Overhaul of the engine model — proposal
 
-Working document for the branch `overhaul-of-engine`. Points we want to establish before anything is built.
-Status: sections marked *agreed* are decided (2026-10-26); everything else is under discussion.
+Consolidated 2026-10-26 on branch `overhaul-of-engine`. Everything below is agreed unless listed under "Open".
+Yardsticks for the hardware layer: `docs/overhaul/yardsticks.md`.
 
-## Goal
+## 1. Goal
 
-The simulator models what the engines and the system actually do, not curves fitted to the data we have.
-Speeds, waits and limits should emerge from hardware resources, engine operations and scheduler rules.
+The simulator models what the engines and the system actually do, not curves fitted to the data we have. Speeds,
+waits and limits emerge from hardware resources, engine operations and scheduler rules.
 
-## Principles
+## 2. Principles
 
-1. **Mechanism over fit.** Every quantity is counted (bytes, layers, tokens), read from a spec sheet, or measured
-   as a primitive. No constant exists only to make an end-to-end number come out right.
-2. **Calibrate at the bottom, validate at the top.** Remaining efficiency factors are per hardware class and come
-   from microbenchmarks (one kernel, one copy, one expert pass). End-to-end benchmarks validate only.
+1. **Mechanism over fit.** Every quantity is counted (bytes, layers, tokens), read from a spec sheet, or measured as
+   a primitive. No constant exists only to make an end-to-end number come out right.
+2. **Calibrate at the bottom, validate at the top.** Primitives come from microbenchmarks; end-to-end benchmarks
+   validate only.
 3. **Every constant names something measurable:** what it is, its unit, how to measure it, where the value came from.
-4. **Modes are explicit.** The operating mode (cards, slots, peer-device or layer split, pipeline groups, version)
-   decides which rules apply, and it is shown to the user.
+4. **Modes are explicit.** The engine's operating mode (cards, slots, peer-device or layer split, pipeline groups,
+   version) decides which rules apply, and it is shown to the user.
 5. **Few parameters, honestly identified.** If the data cannot tell two parameters apart, the model has one.
 
-## Layers to establish
+## 3. Architecture
 
-1. **Hardware resources as resources:** per card compute from clock under the power limit, memory bandwidth, PCIe
-   per direction; CPU cores for experts; RAM bandwidth. Operations consume them and contend for them.
-2. **Engine execution as operations:** per layer, for a window or a prompt chunk: attention or DeltaNet, router,
-   hit experts on the GPU, missed experts on the CPU or copied, MTP head, sampling. Overlap and serialisation
-   follow from the mode.
-3. **Scheduler semantics per engine:** Strata admission, chunk interleaving with the decode share, piped groups
-   reading in one run, slot choice, parking. vLLM continuous batching, token budget, chunked prefill, preemption.
-   llama.cpp slots.
-4. **Routing and caching:** expert selection from a popularity distribution and the engine's cache policy; hit rate
-   comes out of the model.
-5. **Calibration and validation:** which primitives to measure on which hardware, which end-to-end runs validate
-   which layer.
-
-## Decided so far (agreed)
-
-- **Clean split between engines and hardware.** An engine never knows how fast its hardware is; it may read
-  descriptors (see "Rates and efficiency factors") and states demands (compute of a kind on the device holding a
-  stage, bytes moved between memory pools, memory to allocate). The hardware model alone answers durations and
-  memory fit for everything running at the same moment.
-- **Modular hardware as a graph.** Cards, CPU sockets, RAM pools and SSDs are nodes with resources; PCIe slots, the
-  chipset uplink, NVLink, socket links and external links are edges. Transfers follow a path; every edge on it is a
-  shared resource. New hardware means new nodes and edges, no special cases in engine code.
+- **Three stages for the user:** machine, then engine with its profile, then (optional) workload. Most users stop at
+  the engine profile. Workload modelling, and Turnstone with it, is a later, optional layer.
+- **Clean split between engines and hardware.** The engine states demands; the hardware model alone answers
+  durations, memory fit and contention (§5, §6).
 - **Hybrid time model.** The fluid event simulation stays at the system level; between events, rates are constant.
-  Those rates come from the engine walking its operations through the hardware model, per pipeline stage and per
+  The rates come from the engine walking its operations through the hardware model, per pipeline stage and per
   operation class (attention, DeltaNet, routing, hit experts, missed experts, MTP head, sampling).
-- **All states computed up front.** When an engine is configured, every state it can reach is computed once:
-  busy slots, reading or not, depth bucket, prompt chunk size. Each engine on its own; shared paths between engines
-  (RAM bandwidth, chipset uplink, socket links) are resolved at run time with a fair-share step.
-- **Engine profile.** A button on the engine ("Profile engine") computes the table and shows it as a summary of
-  how this engine does by itself on this hardware:
-  - pure writing: total output by busy slots, at a few depths;
-  - pure reading: time to read a prompt by size, from a short follow-up to the full window;
-  - mixed: what happens to the writers while a prompt is read, and for how long (shown per mode: piped groups stop
-    writing, one group writes slowly between chunks), as a curve over the read/write ratio or as named mixes;
-  - limits: per state, which resource sets the pace.
-- **Engine models are per version.** Each modelled version brings its argument schema, the rules between its
-  arguments, its operations and its scheduler rules. Versions without benchmark data are marked unvalidated.
-- **Strata 0.1.43.1 first.** It is the only engine and version with enough benchmark data. vLLM, llama.cpp and
-  other Strata versions follow when data exists.
-- **Three stages for the user.** Machine, then engine with its profile, then (optional) workload. Most users stop
-  at the engine profile: pure reading and pure writing for that engine on that hardware. Workload modelling, and
-  Turnstone with it, is a later, optional layer.
+- **All states computed up front.** When an engine is configured, every state it can reach is computed once: busy
+  slots, reading or not, depth bucket, prompt chunk size. Each engine on its own; shared paths between engines (RAM
+  bandwidth, chipset uplink, socket links) are resolved at run time by a fair-share step.
+- **Engine profile.** A button on the engine ("Profile engine") computes the table and summarises how the engine
+  does by itself on this hardware: pure writing (total output by busy slots, at a few depths); pure reading (time to
+  read a prompt by size, from a short follow-up to the full window); mixed (what happens to the writers while a
+  prompt is read, and for how long, per mode; as a curve over the read/write ratio or as named mixes); limits (per
+  state, which resource sets the pace).
 
-## Hardware interface (agreed)
+## 4. Engines and versions
 
-Four primitives; a part (card, CPU, board) is a bundle of them, the machine is the graph they form.
+- **Engine models are per version:** each brings its argument schema, the rules between its arguments, its
+  operations and its scheduler rules. Versions without benchmark data are marked unvalidated.
+- **Strata 0.1.43.1 first**, the only engine and version with enough benchmark data. vLLM, llama.cpp and other
+  Strata versions follow when data exists.
+- The mode tree for Strata (one card / several; batch 1 / several slots; peer-device / layer split; one pipeline
+  group / several) decides how reading and writing meet: one request at a time, read in chunks with the slots
+  writing between them, or read in one run with all writing stopped (several pipeline groups only).
 
-- **Storage:** capacity, access time, bandwidth. Nothing more. Access patterns are not simulated: the engine model
-  states, from the engine's code, the access size it assumes for an operation; the hardware turns that into an
-  effective rate (size / (access time + size / bandwidth)).
+## 5. Hardware model
+
+Four primitives; a part (card, CPU package, board) is a bundle of them; the machine is the graph they form.
+
+- **Storage:** capacity, access time, bandwidth. Access patterns are not simulated: the engine states the access
+  size it assumes for an operation; the hardware turns that into an effective rate
+  (size / (access time + size / bandwidth)). Access time is fixed (no latency-vs-load curve).
 - **Compute:** clock as a function of power; operation rates per class are multiples of the clock (units x ops per
-  clock per class). No microarchitecture beyond that.
-- **Link:** point to point, simplex or duplex, latency, bandwidth. No multi-master buses. Sharing appears because
-  several flows cross the same link (e.g. everything behind the chipset crosses its uplink).
+  clock per class).
+- **Link:** point to point, simplex or duplex, latency, bandwidth. No multi-master buses; sharing appears because
+  several flows cross the same link. A DRAM channel is simplex (DDR's data lines serve both directions).
 - **Router:** joins links; forwarding capacity; optionally linked to a compute object with a cost per byte (copies
-  that need CPU cycles, e.g. host bounce buffers) — those cycles compete with the engine's own CPU work.
-- **RAM reads and writes:** DRAM cannot read and write at the same time; modelled as one shared direction. Inference
-  is almost all reads, so this stays rough for now.
-- **Access time is fixed** (no latency-vs-load curve): it depends too much on the situation to benchmark.
-- **CPU package (agreed shape):** each core is its own compute with its own link to the package router; the router
-  links to the RAM channels. A core link's bandwidth is what one core can sustain (measured single-core bandwidth,
-  limited by the requests it keeps in flight), so saturation emerges when enough cores read at once. A package holds
-  any number of core groups (type and count, e.g. P- and E-cores), each group one object with a count, for speed.
-  Hyperthreads (later, if ever): two computes sharing one link to the router. Engine workers (e.g. Strata's pool
-  workers) map onto cores, so "how many workers saturate RAM" follows from the model.
-- **In the UI, each storage in the terms users know:** RAM as transfer rate (MT/s), channels and timings
-  (translated to bandwidth and access time in the background, with one fixed controller/fabric term per CPU
-  family); SSDs directly as bandwidth and access time.
-- **Power:** the power limit belongs to the device (card, CPU package). Each primitive in a power-limited device has
-  its own curve: its scalable parameter vs the device's power limit (e.g. a 3090: GPU clock drops quickly and
-  non-linearly with the limit, the VRAM clock not at all). CPUs the same (core clock vs package power). Curves for
-  parts we have data for; users can upload their own as CSV.
+  that need CPU cycles compete with the engine's CPU work).
+- **Transfers** follow a path through the graph; every link, router and storage on it is a shared resource.
+  Concurrent operations share resources by max-min fair share.
+- **CPU package:** any number of core groups (type and count, e.g. P- and E-cores), each group one object with a
+  count. Each core has its own link to the package router; the router links to the RAM channels. A core type has two
+  primitives: compute rate per operation class, and the bandwidth one core sustains (its link). An operation takes
+  the larger of the two times; which one binds emerges. Engine workers map onto cores. Hyperthreads (later, if
+  ever): two computes sharing one link.
+- **Power** belongs to the device (card, CPU package). Each primitive in a power-limited device has its own curve:
+  its scalable parameter vs the device's power limit (a 3090: GPU clock falls quickly and non-linearly, VRAM clock
+  not at all). Curves for parts with data; users can upload their own as CSV.
+- **In the UI, each storage in the terms users know:** RAM as transfer rate, channels and timings (translated to
+  bandwidth and access time, with one fixed controller/fabric term per CPU family); SSDs as bandwidth and access time.
 
-## Engine interface (agreed)
+## 6. Engine interface
 
 - The engine sees roles (stage device, host memory, expert compute), never parts; a binding layer maps its arguments
   onto hardware objects.
-- It states allocations (role storage, bytes, purpose), work per step (operations with their class, amount, access
-  size and order: sequence, parallel, pipelined across stages) and its reachable states.
-- The hardware returns, per step: duration, busy share per resource, the bottleneck, power drawn. Concurrent
-  operations share resources by max-min fair share.
+- It may read descriptors (architecture family, capabilities such as INT8 / FP8 tensor cores, memory sizes) to pick
+  its kernel path and coefficients. It never sees rates and never computes durations.
+- It states allocations (role storage, bytes, purpose), work per step (operations with class, amount, access size
+  and order: sequence, parallel, pipelined across stages) and its reachable states.
+- The hardware returns per step: duration, busy share per resource, the bottleneck, power drawn.
 
-## Rates and efficiency factors (agreed)
+## 7. Rates and efficiency factors
 
-- **Hardware answers per (runtime type and version, operation class):** the achievable rate, defined by the vendor's
-  reference library (cuBLAS / cuBLASLt matrix products, a plain copy for bandwidth). Measured with microbenchmarks.
+- **Hardware answers per (runtime type and version, operation class)** the achievable rate, defined by the vendor's
+  reference library (cuBLAS / cuBLASLt matrix products, a plain copy for bandwidth), measured with microbenchmarks.
 - **The engine version holds one dimensionless factor per operation class:** its kernels' speed relative to that
-  reference. Kernels are not a limited set; they change with engine versions, so their quality belongs there.
-- **The reference makes the two separable:** end-to-end runs of one engine only show the product of factor and rate.
-- **A new engine version inherits the previous version's factors**, marked "inherited", until a benchmark confirms
-  or replaces them. It declares the runtime versions it needs.
-- **Unmeasured hardware:** inherit the per-clock rate from a measured card of the same architecture, scaled by clock
-  and unit count; with no data for the architecture, fall back to the spec sheet with one global default
-  efficiency, and mark the result "unmeasured".
-- **Architecture-specific factors are allowed but not pre-emptive:** one factor per engine version and operation class
-  by default; an engine version stores per-architecture factors where benchmarks show the need.
-- **What the engine may know about the hardware:** read-only descriptors (architecture family, capabilities such as
-  INT8 / FP8 tensor cores, memory sizes). It uses them to pick its kernel path and coefficients. It never sees rates
-  or computes durations itself; the hardware model alone does that.
+  reference. The reference makes factor and rate separable.
+- A new engine version inherits the previous version's factors ("inherited") until a benchmark confirms or replaces
+  them; it declares the runtime versions it needs.
+- Unmeasured hardware: inherit the per-clock rate of a measured card of the same architecture, scaled by clock and
+  units; with no data for the architecture, spec sheet with one global default efficiency, marked "unmeasured".
+- Per-architecture factors only where benchmarks show the need.
 
-## Hardware yardsticks (for developing the hardware model)
+## 8. Out of scope (for now)
 
-Published measurements with a fully stated configuration, used as microbenchmarks for the hardware layer only:
-memory bandwidth (STREAM-type), memory latency, PCIe / host-device copies, GEMM throughput per runtime. Each entry
-records source, configuration (CPU, DIMMs per channel, speed, threads; card, driver, runtime) and what it tests.
-Collected in `docs/overhaul/yardsticks.md` (first set: Intel MLC on Skylake, Cascade Lake and Ice Lake Xeon nodes). The reference box's own microbenchmarks rank first where available.
+Sharing a card or cores between engines; CPU caches, NUMA within a socket, instruction-level CPU detail; RAM
+read/write turnaround (inference is almost all reads); thermals beyond the power limit; hyperthreads.
 
-## Open questions
+## 9. Open
 
-- **Per-core limits are two primitives of a core type:** compute rate per operation class, and the bandwidth one
-  core sustains (its link to the package router). Each operation's time is the larger of the two; which one binds
-  emerges per operation and per configuration, never fixed by hand. Both are measured per core type with generic
-  methods (single-core streaming read for the link; the kernel on cached data for compute).
-- Prompt reading at that 5 % cache was 239 tok/s at every worker count (PCIe-bound): the prompt path at small caches
-  goes over PCIe, not through the CPU workers (contradicts the CPU-floor reading of PR #14).
-
-- What stays out of scope (already: sharing a card or cores between engines; CPU caches, NUMA within a socket,
-  instruction-level CPU detail; thermals beyond the power limit).
-- Which microbenchmarks to run on the reference box (memory latency/bandwidth, host-device copies per slot, cuBLAS
-  GEMM per precision, GPU clock vs power limit under compute-heavy and memory-heavy load).
+- Which microbenchmarks define each primitive (core-type compute per operation class, single-core bandwidth, GPU
+  clock vs power limit under compute-heavy and memory-heavy load, host-device copies, reference GEMM per precision).
+- Strata at small expert caches: prompt reading was PCIe-bound (239 tok/s at every worker count, pass 3); the CPU
+  expert path in writing is limited per core (compute or per-core bandwidth, not yet separated).
