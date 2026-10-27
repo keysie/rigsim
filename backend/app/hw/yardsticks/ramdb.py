@@ -7,6 +7,8 @@ source's sequence only.
 """
 from __future__ import annotations
 
+import re
+
 import json
 from pathlib import Path
 
@@ -64,6 +66,29 @@ def points() -> list[dict]:
                         step=seq.get("step"), change=seq.get("changed_from_previous"),
                         cpu=val(e["system"].get("cpu")), mts=val(e["memory"]["mt_s"]),
                         channels=val(e["memory"]["channels"]), fclk=val((e.get("clocks") or {}).get("fclk_mhz")),
-                        mem_type=val(e["memory"].get("type")),
+                        mem_type=val(e["memory"].get("type")), density_gbit=density(e),
+                        trefi_ns=_trefi_ns(e),
                         tool=val(e["tool"].get("name")), read_gbs=rd, peak_gbs=peak_gbs(e), trust=trust(e, sources)))
     return out
+
+
+def density(e: dict) -> int | None:
+    """Die density in Gbit: stated ("32 Gbit"), or from the stated die (SK Hynix M- and A-die: 16 Gb, INFERRED),
+    or from a stated tRFCsb of 130 ns (the JEDEC 16 Gb value, INFERRED)."""
+    ic = str(val(e["memory"].get("ic")) or "")
+    m = re.search(r"(\d+)\s*Gbit", ic)
+    if m:
+        return int(m.group(1))
+    if re.search(r"Hynix [MA]-die", ic):
+        return 16
+    t = e.get("timings") or {}
+    sb, mts = val(t.get("tRFCsb")), val(e["memory"].get("mt_s"))
+    if sb and mts and abs(sb * 2000 / mts - 130) < 3:
+        return 16
+    return None
+
+
+def _trefi_ns(e: dict) -> float | None:
+    t = e.get("timings") or {}
+    clk, mts = val(t.get("tREFI")), val(e["memory"].get("mt_s"))
+    return clk * 2000 / mts if clk and mts else None

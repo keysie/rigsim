@@ -297,3 +297,25 @@ What does not, and where the model is suspected (each named in the tests):
 - **RTX 3090 at 220 W:** +20 % against pass 3, −15 … −18 % against pass 6 — the law sits between two measurements of
   the same card at the same limit; how much of the card a load uses is not modelled.
 - Data gaps, not model errors: a CPU or FCLK not named in the source; STREAM's write traffic (not modelled).
+
+
+## DRAM efficiency from JEDEC timings (2026-10-27)
+
+`hw/dram.py`: per (sub-)channel, bank-group gaps (a line takes 4 clocks on DDR4 / 8 on DDR5, same-group reads must
+be max(5 / 8 nCK, 5 ns) apart; 4 / 8 bank groups) and all-bank refresh (tRFC every tREFI: DDR4 7.8 us, 260 / 350 /
+550 ns; DDR5 3.9 us, 195 / 295 ns for 8 / 16 Gb). Stated timings replace the defaults; die densities from the
+sources or INFERRED (8 Gb for the DDR4 servers, 16 Gb for unnamed DDR5 kits). One global constant: how often the
+controller issues same-bank-group reads back to back, 0.45 x random (median over 7 DRAM-bound systems). DDR5
+channels are two 32-bit sub-channel storages (the split alone changes nothing: proportional in a flow model).
+
+- **Strongest evidence:** ocinside's controlled experiment (7800X3D, DDR5-6200, only tREFI 3.27 -> 20.0 us):
+  +9.7 %. All-bank refresh explains it with tRFC ~340 ns for the 32 Gb dies (JEDEC: TBD); same-bank refresh could
+  give at most ~2 %. Test: `test_refresh_experiment_supports_all_bank_refresh`.
+- Better than one efficiency for all: Intel DDR5 −10 … −15 % -> −6 … −13 %, DDR4 desktops within ±4 %.
+- Worse: Skylake / Cascade Lake +7 % (the mechanism says DDR4-2666 loses less than 3200; measured the other way).
+- Contradiction: Phoronix DDR5 below JEDEC speeds (3000–4600 MT/s) — measured efficiency falls with speed, the
+  mechanism predicts it rising (up to +21 %).
+- The Intel DDR5 systems need a scheduling share of 0 and still stay below their measurements: with JEDEC refresh no
+  DDR5 system reaches 0.94–0.99 of peak. They most likely run a longer tREFI (XMP / board defaults), not stated.
+- Not identified: refresh for 32 Gb dies (tRFC TBD); the chiplet-link constant still comes from points where that
+  refresh is unknown, so part of it may be refresh (ocg-05 reaches 67.5 GB/s, above the cap 0.884 implies).

@@ -7,8 +7,13 @@ validate_globals.py shows how far every published and own measurement then is fr
 """
 
 # --- memory ------------------------------------------------------------------------------------------------------
-# Sustained read bandwidth of a DRAM channel / its peak (rate x 8 bytes), all-read traffic. Median of the pure-read
-# yardsticks (MLC on 3 Xeon generations, likwid ladders on Cascade Lake and Rome, MLC on Arrow Lake).
+# How often a controller issues two reads to the same bank group back to back, relative to random order (1 = random,
+# 0 = never). With the JEDEC timings it gives each (sub-)channel's read efficiency (dram.py). Median over the
+# DRAM-bound systems (one value each): 3 Xeon generations (MLC), Cascade Lake and Rome (likwid), Core Ultra 7 265K
+# (MLC), Core Ultra 9 285K (hardwareluxx).
+DRAM_SAME_BANK_GROUP_SHARE = 0.45
+
+# Fallback where the memory type is not known: sustained read bandwidth / peak, median of the same systems.
 DRAM_READ_EFFICIENCY = 0.847
 
 # Idle load-to-use latency beyond the DRAM's own CAS time (controller, fabric, caches missed on the way), ns.

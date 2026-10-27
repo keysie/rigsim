@@ -7,6 +7,7 @@ per-core link is not identified (non-binding, and results that cross it say so).
 from __future__ import annotations
 
 from . import constants as K
+from . import dram
 from .machine import Machine, Read
 from .primitives import Compute, Link, Router, Storage
 
@@ -59,11 +60,15 @@ def domain(spec: dict) -> dict:
 
 def build(spec: dict | None, mts: float, channels: int, eff_dram: float | None = None, fclk_mhz: float | None = None,
           eff_link: float | None = None, core_link_bps: float | None = None, cl: int | None = None,
-          mem_type: str | None = None) -> tuple[Machine, list[str]]:
+          mem_type: str | None = None, density_gbit: int | None = None, trefi_ns: float | None = None,
+          trfc_ns: float | None = None) -> tuple[Machine, list[str]]:
     """Returns the machine and the core groups that read. Unknown CPU: one generic core group, monolithic.
     Efficiencies default to the global constants. `core_link_bps`: what one core sustains (its own link to its
     router); None = from the documented miss queue (Little's law) where sourced, else not identified."""
-    eff_dram = K.DRAM_READ_EFFICIENCY if eff_dram is None else eff_dram
+    if eff_dram is None:
+        t = (mem_type or "").lower()
+        eff_dram = (dram.efficiency(t, mts, density_gbit, trefi_ns, trfc_ns)[0] if t in dram.JEDEC
+                    else K.DRAM_READ_EFFICIENCY)
     eff_link = K.CHIPLET_LINK_EFFICIENCY if eff_link is None else eff_link
     lat = access_s(mts, cl)
     m = Machine()

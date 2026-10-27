@@ -1,5 +1,9 @@
 """Every yardstick against the model with the global constants only (proposal §5, spec-sheet first).
 
+DRAM efficiency comes from the JEDEC mechanism (dram.py) with each system's memory type, die density and stated
+timings. Densities not stated in a source are INFERRED: 8 Gb for the DDR4 server systems (2017-2020 RDIMMs), 16 Gb
+for the DDR5 desktop kits without a named die.
+
 No value is fitted per system here. A row is `calibration` if its system contributed to a constant's median
 (fit_globals.py), else `held_out`. Where the model misses, the miss is the finding: the tests name each one and its
 suspected cause, so it is looked at in the model, not patched with a per-device value.
@@ -8,6 +12,7 @@ from __future__ import annotations
 
 from .. import arch
 from .. import constants as K
+from .. import dram
 from ..cpus import CPUS
 from ..curves import load as load_curves
 from ..gpus import GPUS
@@ -30,7 +35,8 @@ def _row(source, point, measured, model, unit, trust, role):
 def cpu_rows() -> list[dict]:
     rows = []
     for name, n in vsc.NODES.items():
-        o = vsc.observe(vsc.build(n, K.FIXED_LATENCY_NS * 1e-9, K.SOCKET_LINK_LATENCY_NS * 1e-9, K.DRAM_READ_EFFICIENCY))
+        eff = dram.efficiency("ddr4", n["mts"], 8)[0]                       # density INFERRED
+        o = vsc.observe(vsc.build(n, K.FIXED_LATENCY_NS * 1e-9, K.SOCKET_LINK_LATENCY_NS * 1e-9, eff))
         mm = n["measured"]
         for key, unit in (("lat_local_ns", "ns"), ("lat_remote_ns", "ns"), ("bw_local_gbs", "GB/s"), ("bw_system_gbs", "GB/s")):
             meas = vsc.mean(mm[key]) if isinstance(mm[key], tuple) else mm[key]
@@ -38,26 +44,28 @@ def cpu_rows() -> list[dict]:
     for kernel, d in tud.CLX.items():
         for cores, meas in d.items():
             spec = arch.domain(CPUS["Xeon Gold 6248"])
-            m, g = arch.build(spec, 2933, spec["channels"])
+            m, g = arch.build(spec, 2933, spec["channels"], mem_type="ddr4", density_gbit=8)
             model = m.solve_reads([Read("x", g[0], "ram", units=cores)])["x"]["rate_bps"] / GB
             rows.append(_row("TUD ladders", f"Cascade Lake {kernel} {cores} cores", meas, model, "GB/s", "high", "calibration"))
     for kernel, d in tud.ROME.items():
         for cores, meas in d.items():
             spec = arch.domain(CPUS["EPYC 7702"])
-            m, g = arch.build(spec, 3200, spec["channels"], fclk_mhz=spec["fclk_nominal_mhz"])
+            m, g = arch.build(spec, 3200, spec["channels"], fclk_mhz=spec["fclk_nominal_mhz"], mem_type="ddr4",
+                              density_gbit=8)
             reads = [Read("a", g[0], "ram", units=min(cores, 8))] + ([Read("b", g[1], "ram", units=cores - 8)] if cores > 8 else [])
             model = sum(v["rate_bps"] for v in m.solve_reads(reads).values()) / GB
             rows.append(_row("TUD ladders", f"Rome {kernel} {cores} cores", meas, model, "GB/s", "high", "calibration"))
     for cfg, (mts, rd, _, _) in igor.CONFIGS.items():
-        rows.append(_row("igor'sLAB MLC", f"265K {cfg}", rd, igor.read_gbs(mts, K.DRAM_READ_EFFICIENCY), "GB/s", "medium",
+        rows.append(_row("igor'sLAB MLC", f"265K {cfg}", rd, igor.read_gbs(mts, dram.efficiency("ddr5", mts, 16)[0]), "GB/s", "medium",
                          "calibration"))
     for kernel in ("copy",):
         for mts, v in zip(pho.SPEEDS, pho.STREAM[kernel][0]):
-            rows.append(_row("Phoronix STREAM", f"12900K {kernel} {mts}", v / 1000, pho.observe(mts, K.DRAM_READ_EFFICIENCY),
+            rows.append(_row("Phoronix STREAM", f"12900K {kernel} {mts}", v / 1000, pho.observe(mts, dram.efficiency("ddr5", mts, 16)[0]),
                              "GB/s", "medium", "held_out"))
     from .validate_ramdb import lookup                   # same CPU lookup the RAM database uses
     for p in ramdb.points():
-        m, groups = arch.build(lookup(p["cpu"]), p["mts"], p["channels"], fclk_mhz=p["fclk"], mem_type=p["mem_type"])
+        m, groups = arch.build(lookup(p["cpu"]), p["mts"], p["channels"], fclk_mhz=p["fclk"], mem_type=p["mem_type"],
+                               density_gbit=p["density_gbit"], trefi_ns=p["trefi_ns"])
         model = arch.all_cores_read_gbs(m, groups)
         role = "calibration" if lookup(p["cpu"]) and lookup(p["cpu"])["topology"] == "chiplet" else "held_out"
         rows.append(_row(f"RAM db {p['source']}", f"{p['id']} {p['cpu']} {p['mts']} ch{p['channels']}", p["read_gbs"],

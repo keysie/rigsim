@@ -13,12 +13,12 @@ from .. import arch
 from ..cpus import lookup
 from . import ramdb
 
-AMD_DRAM_EFF_FROM = "tpu-04"  # one DIMM at 6000: the RAM itself is the bottleneck; inherited within Zen 4/5
-AMD_DRAM_EFF = 0.959
 
 
-def predict(p: dict, eff_dram: float, eff_link: float) -> float:
-    m, groups = arch.build(lookup(p["cpu"]), p["mts"], p["channels"], eff_dram, p["fclk"], eff_link)
+def predict(p: dict, eff_dram: float | None, eff_link: float) -> float:
+    """eff_dram None: from the JEDEC mechanism with the point's memory type, density and stated timings."""
+    m, groups = arch.build(lookup(p["cpu"]), p["mts"], p["channels"], eff_dram, p["fclk"], eff_link,
+                           mem_type=p.get("mem_type"), density_gbit=p.get("density_gbit"), trefi_ns=p.get("trefi_ns"))
     return arch.all_cores_read_gbs(m, groups)
 
 
@@ -41,17 +41,17 @@ def run() -> list[dict]:
         chiplet = bool(spec and spec["topology"] == "chiplet" and all(p["fclk"] for p in pts))
         base = next((p for p in pts if p["channels"] == 2), pts[0])
         if chiplet:
-            eff_dram = AMD_DRAM_EFF
+            eff_dram = None                                  # the JEDEC mechanism (dram.py)
             eff_link = _bisect(lambda x: predict(base, eff_dram, x), base["read_gbs"])
         else:
             eff_link = 1.0
             eff_dram = _bisect(lambda x: predict(base, x, 1.0), base["read_gbs"])
         for p in pts:
             model = predict(p, eff_dram, eff_link)
-            calib = p is base or (chiplet and p["id"] == AMD_DRAM_EFF_FROM)
+            calib = p is base
             rows.append(dict(p, model_gbs=model, error=model / p["read_gbs"] - 1, fitted=calib,
                              fitted_param=("link" if chiplet else "dram"),
-                             param=eff_link if chiplet else eff_dram, held_out=(len(pts) > 1 and not calib)))
+                             param=eff_link if chiplet else (eff_dram or 0.0), held_out=(len(pts) > 1 and not calib)))
     return rows
 
 
