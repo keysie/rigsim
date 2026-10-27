@@ -102,6 +102,9 @@ read/write turnaround (inference is almost all reads); thermals beyond the power
 
 ## 9. Open
 
+- RAM bandwidth vs transfer rate: constant efficiency holds at 5000–6000 MT/s but overshoots below (yardstick 2,
+  up to +16.5 %). Cause unknown (timings, controller mode or software); looking for data with published timings
+  before any model change.
 - Which microbenchmarks define each primitive (core-type compute per operation class, single-core bandwidth, GPU
   clock vs power limit under compute-heavy and memory-heavy load, host-device copies, reference GEMM per precision).
 - Strata at small expert caches: prompt reading was PCIe-bound (239 tok/s at every worker count, pass 3); the CPU

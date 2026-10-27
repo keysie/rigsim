@@ -118,4 +118,8 @@ transfer rate x 8 bytes x a constant efficiency.
 - 5000–6000 MT/s: the model holds within ±1 %.
 - Below 5000 the efficiency is not constant: it falls with speed, with an extra dip at 4200/4600. The deviations are
   far outside the measurement's spread. Unknown timings per speed are the obvious suspect, but the model has no
-  timing beyond CAS in its access time, and access time does not enter bandwidth. Open for discussion.
+  timing beyond CAS in its access time, and access time does not enter bandwidth.
+
+**Status (2026-10-26):** documented miss, model unchanged (option 1). Next: look for scaling data with published
+timings (option 3) to decide whether timings should affect bandwidth (option 2). Treat every explanation as
+suspicious until data separates it: timings, BIOS / memory-controller mode, or software (compiler, OS, STREAM build).
