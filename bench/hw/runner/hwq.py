@@ -9,9 +9,15 @@ transient systemd unit rigsim-hwbench, as root).
                                                                      images, volumes, test files); nothing else
   hwq.py status   --dir RUNDIR
 
-The box is left as it was found: the state before the first item (GPU power limits, CPU frequency limits and
-governors, Docker containers / images / volumes, running containers) is written once to baseline.json and restored
-at the end, on SIGTERM and on any error; ansible/hwbench.yml restores again from the same file (ALWAYS block).
+Containers: no built images. Each run starts one session container from a common image (the question's `image`,
+optionally through a mirror prefix), copies the question's toolkit in (probes/<toolkit>/: sources + setup.sh),
+installs and compiles inside it (network on, optional proxy), disconnects it from the network, runs every item with
+`docker exec`, and discards it at the end.
+
+The run takes the box over: every running container is stopped (except keep_running), and no process may be left
+on a GPU. The box is left as it was found: the state before the first item (GPU power limits, CPU frequency limits
+and governors, Docker containers / images / volumes, running containers) is written once to baseline.json and
+restored at the end, on SIGTERM and on any error; ansible/hwbench.yml restores again from the same file.
 """
 from __future__ import annotations
 
@@ -34,7 +40,7 @@ GPU_FIELDS = "index,pci.bus_id,name,power.limit,power.min_limit,power.max_limit,
 SAMPLE_FIELDS = ("timestamp,index,power.draw,power.limit,clocks.sm,clocks.mem,utilization.gpu,utilization.memory,"
                  "temperature.gpu,pcie.link.gen.current,pcie.link.width.current")
 LABEL = "rigsim.hwbench"
-PROBE_UID = 10001              # the user every probe image runs as
+TOOLKIT_DIR = "/opt/rigsim-hwbench"     # where the toolkit lands inside the session container
 SH = None                      # tests replace this with a fake
 
 
@@ -53,7 +59,7 @@ def short(s: str, n: int = 10) -> str:
 
 
 # --- plans -------------------------------------------------------------------------------------------------------
-REQUIRED = ("question", "asks", "feeds", "image", "grid", "args")
+REQUIRED = ("question", "asks", "feeds", "image", "toolkit", "grid", "args")
 
 
 def load_plan(path: str) -> dict:
@@ -63,16 +69,17 @@ def load_plan(path: str) -> dict:
             raise ValueError(f"{path}: missing '{k}'")
     if "cmd" not in plan["args"]:
         raise ValueError(f"{path}: [args] needs 'cmd'")
-    if plan.get("gpus", "none") not in ("item", "all", "none"):
-        raise ValueError(f"{path}: gpus must be item, all or none")
+    if plan.get("gpus", "none") not in ("item", "none"):
+        raise ValueError(f"{path}: gpus must be 'item' (the grid's gpu key picks the card) or 'none'")
     if plan.get("gpus") == "item" and "gpu" not in plan["grid"]:
         raise ValueError(f"{path}: gpus = 'item' needs a 'gpu' grid key")
     return plan
 
 
 def expand(plan: dict, smoke: bool, gpus: list[dict] | None = None) -> list[dict]:
-    """Grid -> items (cartesian product, in key order). '@all' in a gpu list = every GPU found. A smoke run uses the
-    [smoke] grid and args overrides and one repeat (smokes stay short: one point per mechanism)."""
+    """Grid -> items (cartesian product, in key order). In a gpu list, '@all' = one item per GPU found, '@together' =
+    one item with every GPU visible at once. A smoke run uses the [smoke] grid and args overrides and one repeat
+    (smokes stay short: one point per mechanism)."""
     grid, args = dict(plan["grid"]), dict(plan["args"])
     if smoke:
         grid.update((plan.get("smoke") or {}).get("grid", {}))
@@ -310,20 +317,71 @@ def parse_probe_output(text: str) -> list[dict]:
     return rows
 
 
-def docker_cmd(run_id: str, item: dict, image: str, gpus: list[dict], plan: dict, testdir: str | None) -> list[str]:
-    """No network, no new privileges, tmpfs /tmp, removed on exit, labelled for cleanup."""
-    p = item["params"]
-    cmd = ["docker", "run", "--rm", "--name", f"rigsim-hwbench-{run_id}-{short(item['id'])}",
-           "--label", f"{LABEL}={run_id}", "--network", "none", "--security-opt", "no-new-privileges",
-           "--tmpfs", "/tmp:rw,size=256m", "--ipc", "host"]
-    if plan.get("gpus") == "item":
-        idx = next(g["index"] for g in gpus if g["name"] == p["gpu"])
-        cmd += ["--gpus", f"device={idx}"]
-    elif plan.get("gpus") == "all":
+def image_name(plan: dict, cfg: dict) -> str:
+    """The question's common image, optionally through a mirror / pull-through proxy prefix (config image_mirror)."""
+    prefix = (cfg.get("image_mirror") or "").rstrip("/")
+    return f"{prefix}/{plan['image']}" if prefix else plan["image"]
+
+
+def session_name(rundir: Path) -> str:
+    return f"rigsim-hwbench-{rundir.name}"
+
+
+def start_session(rundir: Path, plan: dict, cfg: dict, toolkit: Path, testdir: str | None, log) -> str:
+    """One container per run: common image, kept alive, toolkit copied in, set up with the network on, then cut off
+    from the network. Returns its name. A leftover session from an interrupted run is discarded first."""
+    name = session_name(rundir)
+    sh(["docker", "rm", "-f", name], timeout=120)
+    image = image_name(plan, cfg)
+    if sh(["docker", "image", "inspect", image], timeout=60).returncode != 0:
+        r = sh(["docker", "pull", image], timeout=3600)
+        if r.returncode != 0:
+            raise RuntimeError(f"cannot pull {image} (the box needs a registry mirror or egress for common images; "
+                               f"config image_mirror): {r.stderr.strip()[-300:]}")
+    cmd = ["docker", "run", "-d", "--name", name, "--label", f"{LABEL}={rundir.name}", "--ipc", "host",
+           "--security-opt", "no-new-privileges", "--entrypoint", "sleep"]
+    if plan.get("gpus", "none") != "none":
         cmd += ["--gpus", "all"]
     if testdir:
         cmd += ["-v", f"{testdir}:/data:rw"]
-    return cmd + [image] + command_for(item)
+    r = sh(cmd + [image, "infinity"], timeout=300)
+    if r.returncode != 0:
+        raise RuntimeError(f"session container did not start: {r.stderr.strip()[-300:]}")
+    digest = sh(["docker", "image", "inspect", "-f", "{{index .RepoDigests 0}}", image], timeout=60).stdout.strip()
+    (rundir / "session.json").write_text(json.dumps(dict(name=name, image=image, digest=digest, t=time.time()), indent=1))
+    if sh(["docker", "cp", f"{toolkit}/.", f"{name}:{TOOLKIT_DIR}"], timeout=300).returncode != 0:
+        raise RuntimeError("could not copy the toolkit into the session container")
+    env = []
+    for k in ("http_proxy", "https_proxy", "no_proxy"):
+        if cfg.get("setup_proxy", {}).get(k):
+            env += ["-e", f"{k}={cfg['setup_proxy'][k]}", "-e", f"{k.upper()}={cfg['setup_proxy'][k]}"]
+    log(f"session {name}: setting up from {image}")
+    r = sh(["docker", "exec", *env, name, "sh", f"{TOOLKIT_DIR}/setup.sh"], timeout=float(plan.get("setup_timeout_s", 1800)))
+    (rundir / "setup.log").write_text((r.stdout or "") + "\n--- stderr ---\n" + (r.stderr or ""))
+    if r.returncode != 0:
+        raise RuntimeError(f"toolkit setup failed (setup.log): {(r.stderr or '').strip()[-300:]}")
+    if not plan.get("network_during_items", False):
+        for net in sh(["docker", "inspect", "-f", "{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}", name],
+                      timeout=60).stdout.split():
+            sh(["docker", "network", "disconnect", "-f", net, name], timeout=60)
+    return name
+
+
+def exec_cmd(session: str, item: dict, gpus: list[dict], plan: dict) -> list[str]:
+    """One item inside the session. GPU questions pick the item's card by PCI order (= nvidia-smi index)."""
+    cmd = ["docker", "exec", "-e", "CUDA_DEVICE_ORDER=PCI_BUS_ID"]
+    if plan.get("gpus") == "item":
+        if item["params"]["gpu"] == "@together":
+            vis = ",".join(str(g["index"]) for g in sorted(gpus, key=lambda g: g["index"]))
+        else:
+            vis = str(next(g["index"] for g in gpus if g["name"] == item["params"]["gpu"]))
+        cmd += ["-e", f"CUDA_VISIBLE_DEVICES={vis}"]
+    return cmd + [session] + command_for(item)
+
+
+def gpu_processes() -> list[str]:
+    r = sh(["nvidia-smi", "--query-compute-apps=pid,process_name,used_memory", "--format=csv,noheader"], timeout=30)
+    return [l.strip() for l in r.stdout.splitlines() if l.strip()] if r.returncode == 0 else []
 
 
 def stop_containers(rundir: Path, base: dict, keep: list[str], log) -> None:
@@ -346,9 +404,9 @@ def run(plan_path: str, rundir: Path, cfg: dict, smoke: bool, fresh: bool, log, 
     if fresh:
         for f in ("state.json", "results.jsonl"):
             (rundir / f).unlink(missing_ok=True)
-    image = cfg["images"][plan["image"]]
-    if "@sha256:" not in image:
-        raise ValueError(f"image for '{plan['image']}' is not pinned by digest: {image}")
+    toolkit = Path(cfg.get("toolkits", str(Path(__file__).resolve().parent / "toolkits"))) / plan["toolkit"]
+    if not (toolkit / "setup.sh").exists():
+        raise ValueError(f"toolkit '{plan['toolkit']}' has no setup.sh under {toolkit.parent}")
     base = capture_baseline(rundir, cfg.get("gpu_names", {}), root)
     gpus = base["gpus"]
     items = expand(plan, smoke, gpus)
@@ -359,24 +417,21 @@ def run(plan_path: str, rundir: Path, cfg: dict, smoke: bool, fresh: bool, log, 
         raise Stop()
     signal.signal(signal.SIGTERM, on_signal)
     signal.signal(signal.SIGINT, on_signal)
+    session = None
     try:
         if plan.get("exclusive", True):
             stop_containers(rundir, base, cfg.get("keep_running", []), log)
-        if sh(["docker", "image", "inspect", image], timeout=60).returncode != 0:
-            r = sh(["docker", "pull", image], timeout=3600)
-            if r.returncode != 0:
-                raise RuntimeError(f"pull {plan['image']}: {r.stderr.strip()[-300:]}")
+        if plan.get("gpus", "none") != "none" or plan.get("exclusive", True):
+            procs = gpu_processes()
+            if procs:
+                raise RuntimeError(f"processes still on the GPUs after stopping the containers: {procs}")
         testdir = None
         if plan.get("testdir"):
             testdir = str(Path(cfg["testdir_parent"]) / f"rigsim-hwbench-{rundir.name}")
             Path(testdir).mkdir(parents=True, exist_ok=True)
-            try:
-                import os
-                os.chown(testdir, PROBE_UID, PROBE_UID)        # the probes run as an unprivileged user
-            except PermissionError:
-                pass
             (rundir / "testdirs.json").write_text(json.dumps([testdir]))
         (rundir / "samples").mkdir(exist_ok=True)
+        session = start_session(rundir, plan, cfg, toolkit, testdir, log)
         for rnd in range(int(plan.get("max_attempts", 2))):
             todo = [it for it in items if state.get(it["id"], {}).get("status") not in ("done", "skipped", "failed")]
             if not todo:
@@ -384,18 +439,19 @@ def run(plan_path: str, rundir: Path, cfg: dict, smoke: bool, fresh: bool, log, 
             for item in todo:
                 if Path(cfg.get("pause_file", "/nonexistent")).exists():
                     log("paused between items"); return 0
-                run_item(item, plan, rundir, cfg, base, gpus, image, testdir, state, smoke, log, root)
+                run_item(item, plan, rundir, cfg, base, gpus, session, state, smoke, log, root)
                 sf.write_text(json.dumps(state, indent=1))
         return 0
     except Stop:
         log("stopping on signal")
         return 130
     finally:
+        sh(["docker", "rm", "-f", session_name(rundir)], timeout=120)      # the session is discarded every time
         for prob in restore(rundir, log, root):
             log(f"RESTORE PROBLEM: {prob}")
 
 
-def run_item(item, plan, rundir, cfg, base, gpus, image, testdir, state, smoke, log, root=CPUFREQ):
+def run_item(item, plan, rundir, cfg, base, gpus, session, state, smoke, log, root=CPUFREQ):
     p = item["params"]
     st = state.get(item["id"], {})
     gpu = next((g for g in gpus if g["name"] == p.get("gpu")), None)
@@ -420,7 +476,7 @@ def run_item(item, plan, rundir, cfg, base, gpus, image, testdir, state, smoke, 
     sp = rundir / "samples" / f"{short(item['id'])}.csv"
     sampler = start_sampler(sp, int(plan.get("sample_ms", 100)))
     time.sleep(float(plan.get("settle_s", 1.0)))
-    cmd = docker_cmd(rundir.name, item, image, gpus, plan, testdir)
+    cmd = exec_cmd(session, item, gpus, plan)
     t0 = time.time()
     try:
         r = sh(cmd, timeout=float(plan.get("timeout_s", 600)))
@@ -428,7 +484,7 @@ def run_item(item, plan, rundir, cfg, base, gpus, image, testdir, state, smoke, 
     except subprocess.TimeoutExpired as e:
         out = e.stdout.decode() if isinstance(e.stdout, bytes) else (e.stdout or "")
         rc, err = -9, "timeout"
-        sh(["docker", "rm", "-f", cmd[cmd.index("--name") + 1]], timeout=60)
+        sh(["docker", "restart", "-t", "0", session], timeout=120)    # kills the hung probe; setup is kept
     t1 = time.time()
     if sampler:
         time.sleep(0.3); sampler.terminate(); sampler.wait(timeout=10)
@@ -441,7 +497,7 @@ def run_item(item, plan, rundir, cfg, base, gpus, image, testdir, state, smoke, 
     ok = rc == 0 and not hot
     row = dict(id=item["id"], question=plan["question"], params=p, rep=item["rep"], attempt=attempts, rc=rc,
                t_start=t0, t_end=t1, results=parse_probe_output(out), stderr_tail=(err or "")[-2000:],
-               samples=samples, sample_file=sp.name, hot=hot, smoke=smoke, command=cmd[cmd.index(image):])
+               samples=samples, sample_file=sp.name, hot=hot, smoke=smoke, command=cmd[cmd.index(session) + 1:])
     with open(rundir / "results.jsonl", "a") as f:
         f.write(json.dumps(row) + "\n")
     final = attempts >= int(plan.get("max_attempts", 2))

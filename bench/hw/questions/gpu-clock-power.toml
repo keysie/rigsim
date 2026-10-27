@@ -5,7 +5,8 @@ feeds = """hw/power.py curves per (sm_clock / vram_bandwidth, load class) per ca
 miss: the same 3090 at 220 W read at 1252 MHz on one card but ~1.8 GHz as one stage of a split (proposal §10)."""
 method = """Sustained load in bursts: 'compute' = FP16 GEMM 8192^3 on random data, 'memory' = streaming read of 4 GiB;
 duty = share of each 20 ms period spent working, the rest idle. nvidia-smi samples every 100 ms on the host."""
-image = "cuda"
+image = "nvidia/cuda:12.8.1-devel-ubuntu24.04"
+toolkit = "cuda"
 gpus = "item"
 exclusive = true
 repeats = 2

@@ -2,8 +2,10 @@
 # rigsim hardware bench: one question on the target, unattended (bench/hw/README.md). Start it with the wrapper,
 # which passes AI-SERVER's inventory, this repo's config.local.yml and the vault file:
 #   bench/hw/run.sh gpu-gemm --smoke        bench/hw/run.sh gpu-clock-power --smoke-first      ... --check
-# What it does: plan validated on the controller -> runner + question + run.json to the target -> transient unit
-# rigsim-hwbench (hwq.py run: baseline recorded once, containers stopped, items, restore) -> waited for ->
+# What it does: plan validated on the controller -> runner, question, toolkit and run.json to the target ->
+# transient unit rigsim-hwbench (hwq.py run: baseline recorded once, every container stopped, one session
+# container from a common image set up with the toolkit, items via docker exec, session discarded, restore) ->
+# waited for ->
 # ALWAYS: unit stopped cleanly, restore again from baseline.json, what the run created removed, everything fetched
 # -> the target is asserted to be as found -> archive masked and checked clean on the controller.
 - name: hwbench — validate on the controller
@@ -23,17 +25,17 @@
         {{ '--smoke' if smoke | bool else '' }}
       register: hw_plan_out
       changed_when: false
+      check_mode: false            # read-only: --check must validate the plan too
 
-    - name: The question's image and the lock
+    - name: The question's toolkit
       ansible.builtin.set_fact:
         hw_plan: "{{ hw_plan_out.stdout | from_json }}"
-        hw_lock: "{{ lookup('file', hw_root ~ '/images.lock.json') | from_json }}"
-        hw_image_key: "{{ lookup('file', hw_root ~ '/questions/' ~ question ~ '.toml') | regex_search('(?m)^image\\s*=\\s*\"([^\"]+)\"', '\\1') | first }}"
+        hw_toolkit: "{{ lookup('file', hw_root ~ '/questions/' ~ question ~ '.toml') | regex_search('(?m)^toolkit\\s*=\\s*\"([^\"]+)\"', '\\1') | first }}"
 
-    - name: The image is built and locked
-      ansible.builtin.assert:
-        that: [hw_image_key in hw_lock, "'digest' in hw_lock[hw_image_key]"]
-        fail_msg: "image '{{ hw_image_key }}' not in images.lock.json — run: bench/hw/run.sh images {{ hw_image_key }}"
+    - name: The toolkit exists (sources + setup.sh)
+      ansible.builtin.stat: { path: "{{ hw_root }}/toolkits/{{ hw_toolkit }}/setup.sh" }
+      register: hw_tk
+      failed_when: not hw_tk.stat.exists
 
     - name: The run
       ansible.builtin.debug:
@@ -47,8 +49,7 @@
     smoke: false
     fresh: false
     hw_rundir: "{{ rundir_parent }}/{{ question }}{{ '-smoke' if smoke | bool else '' }}"
-    hw_lock: "{{ hostvars['localhost'].hw_lock }}"
-    hw_registry: "{{ lookup('vars', registry_var) }}"
+    hw_toolkit: "{{ hostvars['localhost'].hw_toolkit }}"
     hw_fetch: "{{ results_dir | expanduser }}/{{ question }}{{ '-smoke' if smoke | bool else '' }}-{{ lookup('pipe', 'date -u +%Y%m%d-%H%M') }}"
   tasks:
     - name: Check mode — the run itself does nothing
@@ -76,20 +77,21 @@
             - { src: "{{ hw_root }}/runner/hwq.py", dest: hwq.py }
             - { src: "{{ hw_root }}/questions/{{ question }}.toml", dest: question.toml }
 
-        - name: Images by digest (registry from the inventory)
-          ansible.builtin.set_fact:
-            hw_images: "{{ hw_images | default({}) | combine({item.key: hw_registry ~ '/' ~ item.value.repository ~ '@' ~ item.value.digest}) }}"
-          loop: "{{ hw_lock | dict2items }}"
-          loop_control: { label: "{{ item.key }}" }
+        - name: The toolkit (copied into the session container by the runner)
+          ansible.builtin.copy:
+            src: "{{ hw_root }}/toolkits/{{ hw_toolkit }}/"
+            dest: "{{ hw_rundir }}/toolkits/{{ hw_toolkit }}/"
+            mode: preserve
 
         - name: Run configuration
           ansible.builtin.copy:
             dest: "{{ hw_rundir }}/run.json"
             mode: "0600"
             content: >-
-              {{ {'images': hw_images, 'gpu_names': gpu_names, 'keep_running': keep_running,
-                  'testdir_parent': testdir_parent, 'pause_file': hw_rundir ~ '/PAUSE',
-                  'min_free_gb': min_free_gb} | to_nice_json }}
+              {{ {'toolkits': hw_rundir ~ '/toolkits', 'image_mirror': image_mirror | default(''),
+                  'setup_proxy': setup_proxy | default({}), 'gpu_names': gpu_names,
+                  'keep_running': keep_running, 'testdir_parent': testdir_parent,
+                  'pause_file': hw_rundir ~ '/PAUSE', 'min_free_gb': min_free_gb} | to_nice_json }}
 
         - name: Start the question as the transient unit rigsim-hwbench (survives this SSH session)
           ansible.builtin.command: >-
@@ -169,9 +171,11 @@
       vars:
         hw_hosts: >-
           {{ (groups['all'] + (groups['all'] | map('extract', hostvars) | map(attribute='ansible_host', default='')
-              | select | list) + [hostvars[target][registry_var] | default('')]) | select | unique | list }}
+              | select | list) + [(image_mirror | default('')).split('/') | first]) | select | unique | list }}
       register: hw_archive
       changed_when: true
+      when: not ansible_check_mode and hostvars[target].hw_fetched is defined
 
     - name: Archive
       ansible.builtin.debug: { msg: "{{ hw_archive.stdout_lines }}" }
+      when: hw_archive is not skipped

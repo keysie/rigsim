@@ -5,7 +5,8 @@ feeds = """hw/rates.py MEASUREMENTS: per (GPU model, runtime = the image's CUDA 
 share of SMs x measured SM clock x per-SM rate. The reference the engines' kernel factors are relative to."""
 method = """cublasGemmEx on random data, 5 warm-up calls, then `reps` timed calls (CUDA events); median, min, max.
 Shapes MxNxK. INT8: A transposed, dimensions multiples of 4 (cuBLAS IMMA requirement)."""
-image = "cuda"
+image = "nvidia/cuda:12.8.1-devel-ubuntu24.04"
+toolkit = "cuda"
 gpus = "item"
 exclusive = true
 repeats = 1

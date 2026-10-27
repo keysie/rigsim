@@ -4,7 +4,8 @@ with core clock?"""
 feeds = """RAM storage access time (CAS time + the fixed controller/fabric term per CPU family, hw/arch.py)."""
 method = """Pointer chase over a random cyclic permutation of 64-byte lines (transparent huge pages requested), one
 thread; ns per dependent load, median of 5 passes."""
-image = "cpu"
+image = "debian:trixie"
+toolkit = "cpu"
 gpus = "none"
 exclusive = true
 repeats = 3

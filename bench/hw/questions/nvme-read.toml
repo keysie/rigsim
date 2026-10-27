@@ -3,7 +3,8 @@ asks = """What sequential read bandwidth and what random access time does the mo
 feeds = """Storage(bandwidth, access time) for SSDs (expert or model streaming from disk)."""
 method = """fio with direct I/O on a test file in a temporary directory on that disk (config testdir_parent),
 created for the run and removed after it; JSON output."""
-image = "cpu"
+image = "debian:trixie"
+toolkit = "cpu"
 gpus = "none"
 exclusive = true
 testdir = true

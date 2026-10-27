@@ -2,23 +2,27 @@ question = "pcie-copy"
 asks = """What do host <-> card copies reach per slot, one card alone and all cards at once (shared chipset uplink,
 the CPU's root complex), in each direction and both at once — and card to card through the CPU?"""
 feeds = """PCIe link capacities vs spec (hw/links.py), shared links and router capacities in the machine graph,
-duplex behaviour; the copy-engine vs SM copy paths."""
-method = """NVIDIA nvbandwidth (pinned host memory), JSON output, one test case per item."""
-image = "nvbandwidth"
-gpus = "all"
+duplex behaviour."""
+method = """cudaMemcpyAsync with pinned host memory, 512 MiB per transfer, 1 warm-up and `reps` timed transfers per
+card; '@together' runs one thread per card with a common start (per-card and aggregate rates). d2d: card i to
+card i+1 with cudaMemcpyPeer (peer access where the driver offers it, otherwise staged through the host)."""
+image = "nvidia/cuda:12.8.1-devel-ubuntu24.04"
+toolkit = "cuda"
+gpus = "item"
 exclusive = true
 repeats = 3
 sample_ms = 200
-timeout_s = 900
+timeout_s = 300
 
 [grid]
-testcase = ["host_to_device_memcpy_ce", "device_to_host_memcpy_ce", "host_to_device_bidirectional_memcpy_ce",
-            "device_to_host_bidirectional_memcpy_ce", "host_to_all_memcpy_ce", "all_to_host_memcpy_ce",
-            "device_to_device_memcpy_read_ce", "device_to_device_memcpy_write_ce",
-            "host_to_device_memcpy_sm", "device_to_host_memcpy_sm"]
+gpu = ["@all", "@together"]
+dir = ["h2d", "d2h", "bidir", "d2d"]
 
 [args]
-cmd = ["nvb", "-t", "{testcase}"]
+mib = 512
+reps = 10
+cmd = ["probe", "copy", "--dir", "{dir}", "--mib", "{mib}", "--reps", "{reps}"]
 
 [smoke]
-grid = { testcase = ["host_to_device_memcpy_ce"] }
+grid = { gpu = ["@together"], dir = ["h2d", "bidir"] }
+args = { reps = 2 }

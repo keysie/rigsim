@@ -2,6 +2,7 @@
 //   probe gemm   --prec fp32|tf32|fp16_fp32acc|fp16|bf16|int8 --shape MxNxK [--reps 50] [--warmup 5]
 //   probe stream --op read|write|copy [--mib 4096] [--reps 20]
 //   probe load   --kind compute|memory [--duty 1.0] [--seconds 30] [--period-ms 20]
+//   probe copy   --dir h2d|d2h|bidir|d2d [--mib 512] [--reps 10]   every visible card at once (one thread each)
 // Inputs are random (power depends on the data: zeros would draw less and run at a higher clock).
 #include <cublas_v2.h>
 #include <cuda_bf16.h>
@@ -9,7 +10,10 @@
 #include <cuda_runtime.h>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
+#include <condition_variable>
+#include <mutex>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -221,6 +225,76 @@ static int load_mode(int argc, char** argv) {
     return 0;
 }
 
+// ---- host <-> card and card -> card copies -------------------------------------------------------------------------
+struct Gate {                                   // all copy threads start their timed loop together
+    std::mutex m; std::condition_variable cv; int waiting = 0, total;
+    explicit Gate(int n) : total(n) {}
+    void arrive() { std::unique_lock<std::mutex> l(m); if (++waiting == total) cv.notify_all(); else cv.wait(l, [&] { return waiting >= total; }); }
+};
+
+struct CopyResult { int dev; double bytes, seconds; };
+
+static void copy_thread(int dev, const std::string& dir, size_t bytes, int reps, Gate* gate, CopyResult* out) {
+    CK(cudaSetDevice(dev));
+    void *h1, *h2, *d1, *d2;
+    CK(cudaHostAlloc(&h1, bytes, cudaHostAllocDefault)); CK(cudaHostAlloc(&h2, bytes, cudaHostAllocDefault));
+    CK(cudaMalloc(&d1, bytes)); CK(cudaMalloc(&d2, bytes));
+    memset(h1, 1, bytes); memset(h2, 2, bytes);
+    cudaStream_t s1, s2; CK(cudaStreamCreate(&s1)); CK(cudaStreamCreate(&s2));
+    auto once = [&] {
+        if (dir == "h2d" || dir == "bidir") CK(cudaMemcpyAsync(d1, h1, bytes, cudaMemcpyHostToDevice, s1));
+        if (dir == "d2h" || dir == "bidir") CK(cudaMemcpyAsync(h2, d2, bytes, cudaMemcpyDeviceToHost, s2));
+    };
+    once(); CK(cudaDeviceSynchronize());
+    gate->arrive();
+    auto t0 = std::chrono::steady_clock::now();
+    for (int i = 0; i < reps; ++i) once();
+    CK(cudaDeviceSynchronize());
+    double sec = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+    *out = {dev, (double)bytes * reps * (dir == "bidir" ? 2 : 1), sec};
+    cudaFreeHost(h1); cudaFreeHost(h2); cudaFree(d1); cudaFree(d2);
+}
+
+static int copy_mode(int argc, char** argv) {
+    std::string dir = arg(argc, argv, "--dir", "h2d");
+    size_t bytes = strtoull(arg(argc, argv, "--mib", "512").c_str(), nullptr, 10) << 20;
+    int reps = atoi(arg(argc, argv, "--reps", "10").c_str());
+    int n; CK(cudaGetDeviceCount(&n));
+    if (dir == "d2d") {                          // card i -> card i+1 for every visible pair, one after another
+        if (n < 2) { fprintf(stderr, "d2d needs two visible cards\n"); return 1; }
+        for (int a = 0; a + 1 < n; ++a) {
+            int b = a + 1, can = 0;
+            CK(cudaDeviceCanAccessPeer(&can, a, b));
+            void *x, *y;
+            CK(cudaSetDevice(a)); CK(cudaMalloc(&x, bytes)); if (can) cudaDeviceEnablePeerAccess(b, 0);
+            CK(cudaSetDevice(b)); CK(cudaMalloc(&y, bytes));
+            CK(cudaSetDevice(a));
+            CK(cudaMemcpyPeer(y, b, x, a, bytes)); CK(cudaDeviceSynchronize());
+            auto t0 = std::chrono::steady_clock::now();
+            for (int i = 0; i < reps; ++i) CK(cudaMemcpyPeerAsync(y, b, x, a, bytes, 0));
+            CK(cudaDeviceSynchronize());
+            double sec = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+            printf("{\"mode\":\"copy\",\"dir\":\"d2d\",\"src\":%d,\"dst\":%d,\"peer_access\":%s,\"bytes\":%.0f,"
+                   "\"seconds\":%.6g,\"bytes_per_s\":%.6g}\n", a, b, can ? "true" : "false",
+                   (double)bytes * reps, sec, bytes * (double)reps / sec);
+            cudaFree(x); CK(cudaSetDevice(b)); cudaFree(y);
+        }
+        return 0;
+    }
+    std::vector<std::thread> th; std::vector<CopyResult> res(n); Gate gate(n);
+    for (int d = 0; d < n; ++d) th.emplace_back(copy_thread, d, dir, bytes, reps, &gate, &res[d]);
+    for (auto& t : th) t.join();
+    double total = 0, longest = 0;
+    for (auto& r : res) {
+        printf("{\"mode\":\"copy\",\"dir\":\"%s\",\"dev\":%d,\"cards_at_once\":%d,\"bytes\":%.0f,\"seconds\":%.6g,"
+               "\"bytes_per_s\":%.6g}\n", dir.c_str(), r.dev, n, r.bytes, r.seconds, r.bytes / r.seconds);
+        total += r.bytes; longest = std::max(longest, r.seconds);
+    }
+    printf("{\"mode\":\"copy\",\"dir\":\"%s\",\"aggregate\":true,\"cards_at_once\":%d,\"bytes_per_s\":%.6g}\n",
+           dir.c_str(), n, total / longest);
+    return 0;
+}
+
 int main(int argc, char** argv) {
     if (argc < 2) { fprintf(stderr, "usage: probe gemm|stream|load ...\n"); return 1; }
     cudaDeviceProp pr; CK(cudaGetDeviceProperties(&pr, 0));
@@ -228,6 +302,7 @@ int main(int argc, char** argv) {
     if (mode == "gemm") return gemm_mode(argc, argv);
     if (mode == "stream") return stream_mode(argc, argv);
     if (mode == "load") return load_mode(argc, argv);
+    if (mode == "copy") return copy_mode(argc, argv);
     fprintf(stderr, "unknown mode %s\n", mode.c_str());
     return 1;
 }

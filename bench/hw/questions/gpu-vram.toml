@@ -4,7 +4,8 @@ limit (on a 3090 the memory clock is expected to stay put while the SM clock dro
 feeds = """VRAM storage bandwidth (hw/gpu.py) and its power curve (vram_bandwidth, per load class)."""
 method = """Streaming kernels over a 4 GiB buffer (float4 loads with a reduction / float4 stores / both), 3 warm-up
 passes, `reps` timed passes; bytes moved / median time."""
-image = "cuda"
+image = "nvidia/cuda:12.8.1-devel-ubuntu24.04"
+toolkit = "cuda"
 gpus = "item"
 exclusive = true
 repeats = 2

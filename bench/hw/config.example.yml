@@ -9,15 +9,17 @@ ai_server_ansible: ~/AI-SERVER/ansible
 #   export ANSIBLE_VAULT_PASSWORD_FILE=/dev/shm/vp)
 vault_file: ~/AI-SERVER/ansible/inventory/private/group_vars/all/vault.yml
 
-target: ai-server                  # host alias of the machine to measure
-build_host: localhost              # where probe images are built and pushed (Docker + internet; the Ansible VM)
+target: ai-server                  # host alias of the machine to measure (the run takes it over completely)
 
-# Registry: the host comes from an inventory variable (private), the project path must be readable by the box's
-# existing deploy token (read_registry) — e.g. the project that already holds the box's images.
-registry_var: internal_ca_docker_registry
-registry_project: ai/rigsim-hwbench
-registry_user_var: rigsim_registry_user      # vault variable names with push credentials (build host only)
-registry_token_var: rigsim_registry_token
+# Common images (nvidia/cuda:<version>-devel-ubuntu24.04, debian:trixie) are pulled on the target. A box without
+# internet access needs a mirror or pull-through proxy, e.g. GitLab's dependency proxy:
+#   image_mirror: <gitlab-host>/<group>/dependency_proxy/containers
+image_mirror: ""
+# The cpu toolkit installs likwid and fio inside its session container (apt). Without internet: an HTTP proxy for
+# that setup step only (the container is cut off from the network before the first item).
+setup_proxy: {}
+#  http_proxy: http://proxy.example:3128
+#  https_proxy: http://proxy.example:3128
 
 rundir_parent: /var/lib/rigsim-hwbench       # on the target: one directory per question (state, results, samples)
 testdir_parent: /srv/ai                      # on the target: the disk the nvme question reads (temporary directory)

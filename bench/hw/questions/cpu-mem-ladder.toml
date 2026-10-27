@@ -7,7 +7,8 @@ per-core compute from per-core bandwidth (open point in proposal §9)."""
 method = """likwid-bench load kernels (read only) on a 2 GB working set, threads pinned to physical cores (SMT siblings
 left out), 20 iterations; core clock pinned on the host for the item (scaling_min = scaling_max, governor
 performance), restored after it."""
-image = "cpu"
+image = "debian:trixie"
+toolkit = "cpu"
 gpus = "none"
 exclusive = true
 repeats = 3
