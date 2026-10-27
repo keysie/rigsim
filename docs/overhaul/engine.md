@@ -78,6 +78,12 @@ Four primitives; a part (card, CPU package, board) is a bundle of them; the mach
   limit for heavy load, the shared law below the limit. Expected accuracy ~10-20 % per card, enough for choosing
   hardware. Users can override any card with their own measured curve in the UI. Per-card calibration is revisited
   only once submissions provide many trustworthy points per model.
+- **GPU internals from vendor architecture data (agreed 2026-10-27):** a card's internal topology is modelled from
+  what the vendor documents about the chip and the board (whitepapers, spec sheets): e.g. SMs grouped as the die
+  groups them, L2 cache, memory controllers and VRAM channels, the copy engines, the PCIe or NVLink interfaces —
+  as primitives and links, like CPU chiplets. The tunable set stays small (the global constants above), so where
+  the model is off shows directly. Undisclosed details are not assumed; a benchmark that only fits with a hidden
+  structure is recorded as a finding (possibly an undisclosed detail), not built into the model.
 - **GPU clock per state (agreed 2026-10-27):** no feedback loop between load and clock. Curves store the absolute SM
   clock (and VRAM bandwidth) against the power limit, per card and per load class ("compute" / "memory"). Each
   state classifies its operation mix per device once, by roofline at the nominal clock (`hw/loadclass.py`), and
