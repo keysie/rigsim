@@ -206,3 +206,26 @@ per-core bandwidth (1 core), RAM efficiency, and on Rome the chiplet-link effici
 - Known misses: the point just before saturation (+5…9 %). Max-min fills linearly up to a cap; real saturation is
   gradual — the "latency under load" avenue (proposal §10). Rome's one-chiplet plateau also sags slightly with more
   cores (36.8 → 35.8 GB/s from 3 to 8 cores); the model is flat.
+
+## GPU database, low-level parts (roadmap step 2, 2026-10-27)
+
+`backend/app/hw/yardsticks/data/gpu-bench-data.json` (schema v1, research chat: 32 sources, 195 entries, theoretical
+peaks stored separately). Trust: medium for papers and PR tables, low for forum posts, user logs, scoreboards,
+secondary copies, overclocked or anecdotal entries. Only dense results are compared with dense peaks. Application
+families (llm_inference 72, molecular_dynamics 19, hashing 12, mining 4, transformer_training 2) wait for engines
+(roadmap steps 4–5). Code: `gpudb.py`, `validate_gpudb.py`; tests: `test_hw_gpudb.py`. No fitting.
+
+| Check | Data | Result |
+|---|---|---|
+| Per-SM tensor rates (spec table) | RTX 3070 Ti mma microbenchmarks (Sun et al., TU Eindhoven), 11 dense points | 98.2–100 % in FP16, FP16/FP32-acc, TF32, INT8, INT4 |
+| Whole-GPU peak at spec boost | RTX 4090 mma (Hopper-dissecting paper), 4 dense points | +7.7 … +8.3 %, uniform across precisions |
+
+- The spec table's per-SM rates (from the whitepapers) hold at instruction level on consumer Ampere; TF32 and INT4
+  added, the 3070 Ti added as a spec entry.
+- The 4090 runs ~8 % above its boost clock under load (~2.73 GHz vs 2.52 GHz): the clock at the full power limit is
+  not the spec boost. Open for discussion.
+- Not low-level enough or not trustworthy: 3090 cuBLAS FP32 GEMM 21.1 TFLOPS (forum, sizes unknown; 0.59 of the
+  CUDA-core peak); 3090 "TF32" 58.6 TFLOPS (1.65 x the peak, rejected); clpeak 4090 VRAM 921 GB/s (user log,
+  0.91 of spec); AIDA64 on an overclocked 3090 (rejected).
+- Gaps (from the research): no clock-vs-power data, no host-device copy data, no cuBLAS GEMM sweep on a 3090 or 3060
+  with a stated CUDA version. Power curves and library efficiencies stay unmeasured.
