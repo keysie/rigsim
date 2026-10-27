@@ -11,7 +11,11 @@ from dataclasses import dataclass
 
 from .gpus import GPUS
 
-DEFAULT_EFFICIENCY = 0.7     # the only global constant: used only where nothing is measured, and flagged as such
+DEFAULT_EFFICIENCY = 0.7     # used only where nothing is measured, and flagged as such
+# Time one small kernel takes on the GPU when kernels are queued back to back (CUDA graph replay; the stick's
+# gpu-launch question measures it per card and runtime). Placeholder of the right order (a few microseconds) until
+# measured; flagged wherever it is used. Not fitted to any end-to-end benchmark.
+DEFAULT_LAUNCH_S = 2.5e-6
 
 
 @dataclass
@@ -24,6 +28,29 @@ class Measured:
 
 
 MEASUREMENTS: list[Measured] = []          # filled from low-level GPU data (roadmap step 2)
+
+
+@dataclass
+class MeasuredLaunch:
+    model: str
+    runtime: str
+    graphs: bool
+    seconds: float
+    source: str
+
+
+LAUNCHES: list[MeasuredLaunch] = []        # from the stick's / bench's gpu-launch question
+
+
+def launch_s(model: str, runtime: str, graphs: bool = True) -> tuple[float, str]:
+    """Per-kernel time of tiny kernels back to back: measured for this model, else inherited from a card of the same
+    architecture (launch cost does not scale with units), else the placeholder."""
+    for exact in (True, False):
+        for m in LAUNCHES:
+            same = m.model == model if exact else GPUS[m.model]["arch"] == GPUS[model]["arch"]
+            if same and m.runtime == runtime and m.graphs == graphs:
+                return m.seconds, f"{'measured' if exact else 'inherited from ' + m.model} ({m.source})"
+    return DEFAULT_LAUNCH_S, "unmeasured placeholder (gpu-launch not yet measured)"
 
 
 def achievable(model: str, runtime: str, op_class: str, clock_hz: float) -> tuple[float, str]:

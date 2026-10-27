@@ -135,6 +135,10 @@ read/write turnaround (inference is almost all reads); thermals beyond the power
 
 ## 9. Open
 
+- **First engine slice (2026-10-27):** llama.cpp CUDA, one GPU, dense models — engine states operations
+  (`engine/llamacpp/cuda.py`), `hw/execute.py` answers durations; results in yardsticks.md. Kernel factors are
+  unmeasured (1.0): they come from per-kernel measurements, never from llama-bench, which validates.
+
 - Strata at small expert caches: prompt reading was PCIe-bound (239 tok/s at every worker count, pass 3); the CPU
   expert path in writing is limited per core (compute or per-core bandwidth, not yet separated).
 - Which microbenchmarks define each primitive (core-type compute per operation class, single-core bandwidth, GPU

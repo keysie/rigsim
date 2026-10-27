@@ -319,3 +319,28 @@ channels are two 32-bit sub-channel storages (the split alone changes nothing: p
   DDR5 system reaches 0.94–0.99 of peak. They most likely run a longer tREFI (XMP / board defaults), not stated.
 - Not identified: refresh for 32 Gb dies (tRFC TBD); the chiplet-link constant still comes from points where that
   refresh is unknown, so part of it may be refresh (ocg-05 reaches 67.5 GB/s, above the cap 0.884 implies).
+
+## llama-bench, CUDA, one GPU, dense Q4_0 models (first engine slice, 2026-10-27)
+
+Engine: `backend/app/engine/llamacpp/cuda.py` states one forward pass as operations (MMVQ / MMQ / cuBLAS matmuls,
+FlashAttention, elementwise kernels with their counts); `backend/app/hw/execute.py` alone turns them into time (per
+operation the larger of compute and memory time, plus a per-kernel cost). Models from their published configs and
+llama.cpp's quantiser rules (sizes match llama-bench's own: Llama 2 7B Q4_0 3.56 GiB, Llama 3.1 8B 4.33 GiB), or
+from a GGUF header. Every kernel factor is 1.0 and marked unmeasured; nothing is fitted to these rows.
+Run: `cd backend && python3 -m app.hw.yardsticks.validate_llamabench`.
+
+| | rows | median | range |
+|---|---|---|---|
+| tg128 (writing) | 10 (RTX 3060, 3090, 4090; Llama 2 7B, Llama 3.2 1B, 3.1 8B, Gemma 2B) | −1 % | −12 … +13 % |
+| pp512 / pp2048 (reading a prompt) | 10 | **+111 %** | +51 … +157 % |
+
+- **Writing agrees, but rests partly on an unmeasured value:** the per-kernel cost (placeholder 2.5 µs, ~24 kernels
+  per layer) is 14–48 % of the modelled time, the most for the 1B models. The stick's gpu-launch question measures it.
+- **Prompt reading: known miss, as expected.** The model runs MMQ at the cuBLAS-int8 default (0.7 × the int8 tensor
+  peak); the measurements imply MMQ reaches about half of that on Ampere. That is a kernel factor, to be measured per
+  kernel (llama.cpp's `test-backend-ops perf`), not fitted from these rows.
+- **Ada, small models:** the 4090's 72 MB L2 holds a prompt's activations; the model sends them through VRAM, so
+  memory shows up as the bound for the 1B model there. L2 bandwidth is not published (non-binding in the hardware
+  model), so this stays a finding for now.
+- Skipped (52 rows): GPUs without a spec-table entry (26: 5090, 3090 Ti, P40, …), architectures not yet described
+  (14: MoE models), ROCm (7), several GPUs (5).
