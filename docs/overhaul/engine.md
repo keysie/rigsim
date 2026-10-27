@@ -127,3 +127,18 @@ final simulator needs them, with the evidence that suggested them.
   step (-11.6 ns, bandwidth unchanged); possibly the Skylake vs Cascade Lake gap.
 - **Power-state dependent latency** (Arrow Lake E-cores see higher DRAM latency unless a P-core is active).
 - **Latency under load** (loaded-latency curves; fixed access time today).
+
+## 11. Roadmap (user, 2026-10-27)
+
+1. Build the GPU code (hardware layer: card as compute + VRAM + copy engine + PCIe port, power curves per
+   primitive, rates per runtime and operation class). **Done 2026-10-27** (`backend/app/hw/gpu.py`, `gpus.py`,
+   `power.py`, `rates.py`, `links.py`; general transfers in `machine.py`), no data yet: curves flat and marked
+   unmeasured, rates at the spec peak x one default efficiency and marked unmeasured until step 2.
+2. Calibrate and validate on low-level GPU data where possible (clock vs power limit, host-device copies, reference
+   GEMM per precision, VRAM bandwidth).
+3. Build the engine code: the framework only (engine interface, roles and binding, step graphs, state tables, the
+   profile), no engines yet.
+4. Take apart one or two popular open-source benchmark tools and model them as engines.
+5. Use them to access those tools' large public result sets for validation and tuning of the hardware model.
+6. Tune and improve the hardware model.
+7. Continue building the Strata engine.

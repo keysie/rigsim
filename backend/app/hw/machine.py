@@ -78,6 +78,8 @@ class Machine:
             members = self.interleaved[storage]
             return sum(self.idle_latency_s(compute, s) for s in members) / len(members)
         t = self.nodes[storage].access_s
+        if t is None:
+            raise ValueError(f"access time of {storage} not identified")
         for l, reached in self.path(compute, storage):
             t += l.latency_s
             node = self.nodes[reached]
@@ -133,3 +135,83 @@ class Machine:
         rates, bottleneck = max_min_fair_share(capacity, flows)
         return {f: {"rate_bps": rates[f], "bottleneck": bottleneck[f], "unidentified_on_path": unidentified[f]}
                 for f in flows}
+
+
+@dataclass
+class Transfer:
+    """Bytes moving from a storage to a storage or a compute, concurrently with other transfers. `units` (for a
+    compute destination) is how many of its units receive, each over its own per-unit link."""
+    id: str
+    src: str
+    dst: str
+    units: int | None = None
+
+
+def _resources_along(m: "Machine", src: str, dst: str, share: float, units: int, capacity: dict, used: dict,
+                     unknown: list) -> float | None:
+    """Adds the resources a transfer src -> dst uses (links per direction, routers, router CPU cycles, source and
+    destination storage bandwidth). Returns the cap from per-unit links, if any."""
+    own_cap = None
+    here = src
+    for l, reached in m.path(src, dst):
+        direction = "ab" if (l.a == here) else "ba"
+        if l.per_unit:
+            if l.bandwidth_bps is None:
+                unknown.append(l.id)
+            else:
+                cap = l.bandwidth_bps * units
+                own_cap = cap if own_cap is None else min(own_cap, cap)
+        else:
+            key = f"link:{l.id}:{direction if l.duplex else 'shared'}"
+            if l.bandwidth_bps is None:
+                unknown.append(l.id)
+            else:
+                capacity[key] = l.bandwidth_bps; used[key] = used.get(key, 0.0) + share
+        node = m.nodes[reached]
+        if isinstance(node, Router) and reached != dst:
+            if node.forward_bps is None:
+                unknown.append(node.id)
+            else:
+                key = f"router:{node.id}"
+                capacity[key] = node.forward_bps; used[key] = used.get(key, 0.0) + share
+            if node.cpu:
+                cpu = m.nodes[node.cpu]
+                key = f"cycles:{cpu.id}"
+                capacity[key] = cpu.clock_hz * cpu.count; used[key] = used.get(key, 0.0) + share * node.cycles_per_byte
+        here = reached
+    for end in (src, dst):
+        st = m.nodes[end]
+        if isinstance(st, Storage):
+            if st.bandwidth_bps is None:
+                unknown.append(st.id)
+            else:
+                key = f"storage:{st.id}"
+                capacity[key] = st.bandwidth_bps; used[key] = used.get(key, 0.0) + share
+    return own_cap
+
+
+def solve_transfers(m: "Machine", transfers: list[Transfer]) -> dict[str, dict]:
+    """Rates of concurrent transfers under max-min fair share. Interleaved sets spread over their members."""
+    capacity: dict[str, float] = {}
+    flows: dict[str, tuple[float, dict, float | None]] = {}
+    unidentified: dict[str, list[str]] = {}
+    for t in transfers:
+        dst_node = m.nodes.get(t.dst)
+        units = 1
+        if isinstance(dst_node, Compute):
+            units = dst_node.count if t.units is None else min(t.units, dst_node.count)
+        srcs = m.interleaved.get(t.src, [t.src])
+        dsts = m.interleaved.get(t.dst, [t.dst])
+        used: dict[str, float] = {}
+        unknown: list[str] = []
+        own_cap = None
+        for a in srcs:
+            for b in dsts:
+                cap = _resources_along(m, a, b, 1.0 / (len(srcs) * len(dsts)), units, capacity, used, unknown)
+                if cap is not None:
+                    own_cap = cap if own_cap is None else min(own_cap, cap)
+        flows[t.id] = (float(units), used, own_cap)
+        unidentified[t.id] = sorted(set(unknown))
+    rates, bottleneck = max_min_fair_share(capacity, flows)
+    return {f: {"rate_bps": rates[f], "bottleneck": bottleneck[f], "unidentified_on_path": unidentified[f]}
+            for f in flows}

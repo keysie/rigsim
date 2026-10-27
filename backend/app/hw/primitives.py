@@ -10,17 +10,18 @@ from dataclasses import dataclass, field
 
 @dataclass
 class Storage:
-    """Capacity, access time, bandwidth. Nothing more (access patterns are the engine's to state)."""
+    """Capacity, access time, bandwidth. Nothing more (access patterns are the engine's to state).
+    access_s None = not identified (latency results that need it say so)."""
     id: str
     capacity_b: float
     bandwidth_bps: float | None
-    access_s: float
+    access_s: float | None
 
     def effective_bps(self, access_size_b: float) -> float | None:
         """Rate for accesses of a given size: size / (access time + size / bandwidth)."""
         if self.bandwidth_bps is None:
             return None
-        return access_size_b / (self.access_s + access_size_b / self.bandwidth_bps)
+        return access_size_b / ((self.access_s or 0.0) + access_size_b / self.bandwidth_bps)
 
 
 @dataclass
@@ -51,7 +52,11 @@ class Link:
 
 @dataclass
 class Router:
-    """Joins links. Forwarding capacity None = not identified (non-binding)."""
+    """Joins links. Forwarding capacity None = not identified (non-binding). A router whose forwarding needs CPU
+    cycles (host bounce buffers, software copies) names that compute and the cycles per byte; those cycles compete
+    with everything else that compute does."""
     id: str
     forward_bps: float | None = None
     latency_s: float = 0.0
+    cpu: str | None = None
+    cycles_per_byte: float = 0.0

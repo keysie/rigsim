@@ -3,7 +3,8 @@
 Engines never import from here directly; they go through the engine interface (later iterations).
 """
 from .primitives import Storage, Compute, Link, Router
-from .machine import Machine, Read
+from .machine import Machine, Read, Transfer, solve_transfers
 from .flows import max_min_fair_share
 
-__all__ = ["Storage", "Compute", "Link", "Router", "Machine", "Read", "max_min_fair_share"]
+__all__ = ["Storage", "Compute", "Link", "Router", "Machine", "Read", "Transfer", "solve_transfers",
+           "max_min_fair_share"]
