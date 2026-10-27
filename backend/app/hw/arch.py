@@ -1,17 +1,36 @@
-"""Package topologies per architecture (proposal §5: architecture differences are topology, guided by spec sheets)."""
+"""Package topologies per architecture (proposal §5: architecture differences are topology, from spec sheets).
+
+Device-specific values come from cpus.py (vendor documentation); the rest are the global constants in
+constants.py — nothing is fitted per system. Per-core bandwidth follows Little's law from the core's documented
+capacity for outstanding cache misses: misses x 64 bytes / idle latency; where that capacity is not sourced yet, the
+per-core link is not identified (non-binding, and results that cross it say so)."""
 from __future__ import annotations
 
+from . import constants as K
 from .machine import Machine, Read
 from .primitives import Compute, Link, Router, Storage
 
+LINE_B = 64
 
-def _channels(m: Machine, router: str, mts: float, channels: int, eff_dram: float) -> list[str]:
+
+def access_s(mts: float, cl: int | None) -> float:
+    """Idle DRAM access: CAS time (CL cycles at the memory clock, MT/s / 2) + the global fixed term."""
+    cas = cl * 2 / (mts * 1e6) if cl else 0.0
+    return cas + K.FIXED_LATENCY_NS * 1e-9
+
+
+def core_link_from_queue(spec: dict | None, core_type: str, latency_s: float) -> float | None:
+    q = ((spec or {}).get("outstanding_misses_per_core") or {}).get(core_type)
+    return q * LINE_B / latency_s if q else None
+
+
+def _channels(m: Machine, router: str, mts: float, channels: int, eff_dram: float, cl: int | None = None) -> list[str]:
     """Each channel its own simplex link and storage (8 bytes per transfer per channel)."""
     per = mts * 1e6 * 8
     names = []
     for c in range(channels):
         n = f"ch{c}"
-        m.add(Storage(n, capacity_b=16 * 2**30, bandwidth_bps=per * eff_dram, access_s=80e-9))
+        m.add(Storage(n, capacity_b=16 * 2**30, bandwidth_bps=per * eff_dram, access_s=access_s(mts, cl)))
         m.connect(Link(f"bus{c}", n, router, per, duplex=False))
         names.append(n)
     m.interleave("ram", names)
@@ -29,15 +48,20 @@ def domain(spec: dict) -> dict:
     return spec
 
 
-def build(spec: dict | None, mts: float, channels: int, eff_dram: float, fclk_mhz: float | None = None,
-          eff_link: float = 1.0, core_link_bps: float | None = None) -> tuple[Machine, list[str]]:
+def build(spec: dict | None, mts: float, channels: int, eff_dram: float | None = None, fclk_mhz: float | None = None,
+          eff_link: float | None = None, core_link_bps: float | None = None, cl: int | None = None
+          ) -> tuple[Machine, list[str]]:
     """Returns the machine and the core groups that read. Unknown CPU: one generic core group, monolithic.
-    `core_link_bps`: what one core sustains (its own link to its router); None = not identified."""
+    Efficiencies default to the global constants. `core_link_bps`: what one core sustains (its own link to its
+    router); None = from the documented miss queue (Little's law) where sourced, else not identified."""
+    eff_dram = K.DRAM_READ_EFFICIENCY if eff_dram is None else eff_dram
+    eff_link = K.CHIPLET_LINK_EFFICIENCY if eff_link is None else eff_link
+    lat = access_s(mts, cl)
     m = Machine()
     groups: list[str] = []
     if spec and spec["topology"] == "chiplet" and fclk_mhz:
         m.add(Router("iod"))
-        _channels(m, "iod", mts, channels, eff_dram)
+        _channels(m, "iod", mts, channels, eff_dram, cl)
         for d in range(spec["ccds"]):
             r = f"ccd{d}"
             m.add(Router(r))
@@ -45,14 +69,16 @@ def build(spec: dict | None, mts: float, channels: int, eff_dram: float, fclk_mh
             for t, n in spec["cores_per_ccd"].items():
                 g = f"{r}.{t}"
                 m.add(Compute(g, clock_hz=0.0, count=n))
-                m.connect(Link(f"{g}.link", g, r, core_link_bps, per_unit=True))
+                bps = core_link_bps if core_link_bps is not None else core_link_from_queue(spec, t, lat)
+                m.connect(Link(f"{g}.link", g, r, bps, per_unit=True))
                 groups.append(g)
     else:
         m.add(Router("pkg"))
-        _channels(m, "pkg", mts, channels, eff_dram)
+        _channels(m, "pkg", mts, channels, eff_dram, cl)
         for t, n in ((spec or {}).get("cores") or {"generic": 8}).items():
             m.add(Compute(t, clock_hz=0.0, count=n))
-            m.connect(Link(f"{t}.link", t, "pkg", core_link_bps, per_unit=True))
+            bps = core_link_bps if core_link_bps is not None else core_link_from_queue(spec, t, lat)
+            m.connect(Link(f"{t}.link", t, "pkg", bps, per_unit=True))
             groups.append(t)
     return m, groups
 

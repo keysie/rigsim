@@ -255,3 +255,45 @@ Held out, pass 6 (two-card layer split, 220 W, 100 ms samples), all four outside
 Same card, same limit, same class, 30–40 % apart: one card reading the whole model draws far more power per MHz than
 one stage of a split. Two load classes do not capture how much of the card a load uses. Named known misses in the
 tests; the mechanism that would capture it is listed as an avenue (proposal §10).
+
+
+## Global constants only (spec-sheet first, 2026-10-27)
+
+Every device-specific value now comes from vendor documentation (`hw/gpus.py`, `hw/cpus.py`); measurements set only
+the global constants in `hw/constants.py`, each one value for every device it applies to. `yardsticks/fit_globals.py`
+derives each constant from its data (one value per measured system, then the median; a test fails if the file
+differs); `yardsticks/validate_globals.py` runs every yardstick with these constants and nothing fitted per system;
+`tests/test_hw_globals.py` names every miss outside tolerance with its suspected cause, and checks that named misses
+still miss.
+
+| Constant | Value | From (one value per system) |
+|---|---|---|
+| DRAM read efficiency | 0.847 | 3 Xeon generations (MLC), Cascade Lake and Rome (likwid), Core Ultra 7 265K (MLC): 0.80–0.94 |
+| Fixed latency term | 75.35 ns | 3 Xeon generations: 66.8 / 75.4 / 75.4 |
+| Socket-link latency | 54.1 ns | 3 Xeon generations: 53.7–59.9 |
+| Chiplet-link efficiency | 0.884 | Rome, Zen 4 (one source), Zen 5 (two sources): 0.78–0.99 |
+| Sustained clock at TDP / spec boost | 1.039 | RTX 3090 at 220 / 250 / 300 W (law-scaled), RTX 4090 at 450 W |
+| Clock vs power exponent | 1/3 | physics (dynamic power ~ f V^2, V ~ f), not fitted |
+| Memory-load clock gain | 1.059 | RTX 3090 pairs at 220 / 250 / 300 W |
+| VRAM efficiency | 1.0 | unmeasured (bench question gpu-vram) |
+
+GPU memory systems are built from the documented controllers (one 32-bit controller per VRAM slice, pins x data
+rate): the derived bandwidth matches the vendor figure on all four cards within 0.05 %.
+
+What holds without any per-system value: all three Xeon generations' bandwidths and remote latencies (−1.4 … +5.7 %),
+the core-ladder plateaus where the channels or both Rome chiplets bind (within 3 %), Zen 4/5 at the chiplet link
+(OCinside sources within 1 %), DDR4 desktop parts (−3 … −5 %), the RTX 3090 at 250 / 300 W and the RTX 4090 (−4 %).
+
+What does not, and where the model is suspected (each named in the tests):
+
+- **Few cores (1–4):** up to +460 %. The per-core limit (Little's law from the documented outstanding misses per
+  core) is in place but the queue sizes are not yet sourced from the Intel and AMD optimisation manuals.
+- **DDR5 systems:** Arrow Lake (two sources) and Zen 5 at TechPowerUp −10 … −15 %. One read efficiency for DDR4
+  and DDR5 does not fit; DDR5's two independent 32-bit sub-channels per DIMM are a documented structural difference.
+- **Zen 3 APU (Ryzen 7 5800H):** +86 %. Modelled as monolithic, but its cores reach memory through the same 32-byte
+  data-fabric link as the chiplet parts — a topology error, hidden until now by a per-source fit.
+- **Rome, one chiplet:** +13 … +16 %. One link efficiency for every Zen generation.
+- **Cascade Lake idle latency:** +10.5 %. 8.5 ns faster than Skylake and Ice Lake, not explained by the timings.
+- **RTX 3090 at 220 W:** +20 % against pass 3, −15 … −18 % against pass 6 — the law sits between two measurements of
+  the same card at the same limit; how much of the card a load uses is not modelled.
+- Data gaps, not model errors: a CPU or FCLK not named in the source; STREAM's write traffic (not modelled).

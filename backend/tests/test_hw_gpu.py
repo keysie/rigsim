@@ -62,8 +62,17 @@ def test_card_to_card_goes_through_the_cpu_router():
 
 
 def test_sms_read_vram_at_its_bandwidth():
+    """12 controllers x 32 bits x 19.5 Gbps = 936.0 GB/s (the vendor quotes 936.2), spread over every slice."""
     r = solve_transfers(box(), [Transfer("x", "gpu1.vram", "gpu1.sm")])["x"]
-    assert abs(r["rate_bps"] - 936.2 * GB) < 1e3 and r["bottleneck"] == "storage:gpu1.vram"
+    assert abs(r["rate_bps"] - 936.0 * GB) < 1e3
+    assert r["bottleneck"].startswith(("storage:gpu1.vram", "link:gpu1.mc"))
+
+
+def test_vram_is_one_slice_per_documented_controller():
+    m = box()
+    assert len(m.interleaved["gpu1.vram"]) == 12 and len(m.interleaved["gpu0.vram"]) == 6   # GA102 / GA106
+    assert abs(m.links["gpu0.mc0"].bandwidth_bps - 4 * 15e9) < 1                            # 32 bits x 15 Gbps
+    assert m.nodes["gpu1.l2"].capacity_b == 6 * 2**20 and m.nodes["gpu1.l2"].bandwidth_bps is None
 
 
 def test_clock_comes_from_the_state_load_class_curve():
@@ -76,20 +85,32 @@ def test_clock_comes_from_the_state_load_class_curve():
     assert abs(m.nodes["g.sm"].clock_hz - 1460e6) < 1e3 and st["sm_clock_basis"].startswith("measured")
     set_load_class(m, "g", "memory")
     assert abs(m.nodes["g.sm"].clock_hz - 1635e6) < 1e3
-    assert st["vram_bps"] == 936.2 * GB and st["vram_basis"].startswith("unmeasured")      # no VRAM curve: spec
+    assert abs(st["vram_bps"] - 936.0 * GB) < 1e3 and "unmeasured" in st["vram_basis"]   # no VRAM curve: spec
 
 
 def test_clock_fallbacks_are_labelled():
     from app.hw.gpu import set_load_class
     m = Machine(); m.add(Router("cpu"))
     add_gpu(m, "a", "rtx-3090", "cpu", slot_gen=4, slot_lanes=16)
-    assert set_load_class(m, "a", "compute")["sm_clock_basis"].startswith("unmeasured")
-    assert m.nodes["a.sm"].clock_hz == 1695e6                                            # spec boost
+    assert set_load_class(m, "a", "compute")["sm_clock_basis"].startswith("spec-sheet law")
+    from app.hw import constants as K                                    # at TDP: sustained factor x spec boost
+    assert abs(m.nodes["a.sm"].clock_hz - K.SUSTAINED_CLOCK_FACTOR * 1695e6) < 1
     one = {("sm_clock", "compute"): PowerCurve(points=[(450, 2733)], basis="inferred", source="t")}
     add_gpu(m, "b", "rtx-4090", "cpu", slot_gen=4, slot_lanes=16, power_limit_w=300, curves=one)
     st = set_load_class(m, "b", "compute")
     assert "extrapolated" in st["sm_clock_basis"] and m.nodes["b.sm"].clock_hz == 2733e6
     assert "other load class" in set_load_class(m, "b", "memory")["sm_clock_basis"]
+
+
+def test_spec_sheet_clock_law():
+    from app.hw import constants as K
+    from app.hw.gpus import GPUS
+    from app.hw.power import spec_clock_mhz
+    g = GPUS["rtx-3090"]
+    full = spec_clock_mhz(g, 350, "compute")
+    assert abs(full - K.SUSTAINED_CLOCK_FACTOR * 1695) < 1e-9
+    assert abs(spec_clock_mhz(g, 350 / 8, "compute") - full / 2) < 1e-9        # (1/8)^(1/3) = 1/2
+    assert abs(spec_clock_mhz(g, 250, "memory") / spec_clock_mhz(g, 250, "compute") - K.MEMORY_LOAD_CLOCK_GAIN) < 1e-12
 
 
 def test_load_class_from_the_operation_mix():

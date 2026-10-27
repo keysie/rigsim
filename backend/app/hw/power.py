@@ -1,13 +1,20 @@
-"""Power curves (proposal §5): per primitive of a power-limited device and per load class, the absolute value of
-its scalable parameter (SM clock in MHz, VRAM bandwidth in GB/s) against the device's power limit in watts.
-Linear between points, flat beyond the ends. Load classes: "compute" (the state's time is mostly compute-bound)
-and "memory" (mostly memory-bound); a state picks its class from its operation mix (loadclass.py), one pass, no
+"""GPU clock against the power limit (proposal §5, spec-sheet first).
+
+Default: the spec-sheet law. At the rated power (TDP) a compute-heavy load sustains SUSTAINED_CLOCK_FACTOR x the
+spec boost clock; below it the clock falls as (limit / TDP)^CLOCK_POWER_EXPONENT; a memory-heavy load runs
+MEMORY_LOAD_CLOCK_GAIN higher at the same limit. Three global constants for every card; nothing per card.
+
+Override: a measured curve (the user's CSV in the UI) per primitive and load class — the absolute value (SM clock in
+MHz, VRAM bandwidth in GB/s) against the power limit in watts, linear between points, flat beyond the ends.
+Load classes: "compute" / "memory"; a state picks its class from its operation mix (loadclass.py), one pass, no
 feedback between clock and load."""
 from __future__ import annotations
 
 import csv
 import io
 from dataclasses import dataclass, field
+
+from . import constants as K
 
 LOAD_CLASSES = ("compute", "memory")
 
@@ -38,3 +45,9 @@ class PowerCurve:
         if not rows:
             raise ValueError("a power curve needs at least one point")
         return cls(points=rows, basis="measured", source=source)
+
+
+def spec_clock_mhz(spec: dict, limit_w: float, load_class: str) -> float:
+    """The spec-sheet law: SM clock for a load class at a power limit, from boost clock and TDP only."""
+    f = K.SUSTAINED_CLOCK_FACTOR * spec["boost_mhz"] * (limit_w / spec["tdp_w"]) ** K.CLOCK_POWER_EXPONENT
+    return f * (K.MEMORY_LOAD_CLOCK_GAIN if load_class == "memory" else 1.0)

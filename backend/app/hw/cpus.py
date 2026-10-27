@@ -3,6 +3,11 @@
 Each entry names its source. `ccd_read_bytes_per_fclk` is the read width of one chiplet's link to the I/O die per
 fabric clock (AMD Zen 2-5 desktop, architecture documentation); None for monolithic or tiled parts whose internal
 link capacity is not documented (modelled as non-binding).
+
+`outstanding_misses_per_core` (per core type): how many cache-line misses one core can keep in flight towards
+memory, from the vendor's optimisation manual; with the idle latency it gives the per-core bandwidth (Little's law,
+arch.py). Not sourced yet for any entry (to do: Intel and AMD optimisation manuals) — so the per-core limit is not
+identified and single-core predictions show it.
 """
 from __future__ import annotations
 

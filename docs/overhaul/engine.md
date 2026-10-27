@@ -76,7 +76,11 @@ Four primitives; a part (card, CPU package, board) is a bundle of them; the mach
   patched with a per-device constant. To revise for CPUs (fitted per system today): RAM efficiency, the fixed
   latency term, socket-link latency, chiplet-link efficiency, per-core bandwidth (candidate from documentation:
   outstanding misses per core x 64 B / latency). Drives: bandwidth and IOPS from the spec sheet; cache tiers
-  (DRAM, SLC) only where documented.
+  (DRAM, SLC) only where documented. **Status 2026-10-27:** global constants in `hw/constants.py`, derived by
+  `yardsticks/fit_globals.py`, validated over every yardstick (`validate_globals.py`, yardsticks.md "Global
+  constants only"); GPUs built from their documented memory controllers; clock from the spec-sheet law, measured
+  curves as user overrides. Open, from the validation: queue sizes for Little's law (optimisation manuals); DDR4 vs
+  DDR5 read efficiency (sub-channels); Zen APUs' data-fabric link; drives not yet modelled.
 - **Spec-sheet first, no per-card fitting (agreed 2026-10-27, supersedes per-card curves as the default):** every
   card-specific value comes from the spec sheet (SMs, per-SM rates, boost and base clock, TDP, VRAM bandwidth, PCIe).
   Measurements may only set a handful of global constants shared by an architecture or by all GPUs (e.g. one
