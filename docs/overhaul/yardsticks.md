@@ -229,3 +229,29 @@ families (llm_inference 72, molecular_dynamics 19, hashing 12, mining 4, transfo
   0.91 of spec); AIDA64 on an overclocked 3090 (rejected).
 - Gaps (from the research): no clock-vs-power data, no host-device copy data, no cuBLAS GEMM sweep on a 3090 or 3060
   with a stated CUDA version. Power curves and library efficiencies stay unmeasured.
+
+
+## GPU power curves (2026-10-27)
+
+`backend/app/hw/data/gpu-power-curves.json`, loaded by `hw/curves.py`; tests `test_hw_power_curves.py`.
+
+Calibration (medium trust):
+- **RTX 3090, reference box, pass 3** (one card, Strata 0.1.43.1, ~1.2 s samples of SM clock and board power;
+  card inferred to be the Gigabyte one by PCI order): median SM clock while reading a prompt (compute) / writing
+  (memory): 220 W 1252 / 1500 MHz, 250 W 1575 / 1620 MHz, 300 W 1672 / 1770 MHz (the card drew 284–290 W at 300 W).
+  Compute runs below memory at every limit, as expected.
+- **RTX 4090, Hopper-dissecting paper:** one inferred point, compute 2733 MHz at 450 W (throughput / (SMs x per-SM
+  rate)); reproduces the paper's FP16 throughput within 1 %.
+
+Held out, pass 6 (two-card layer split, 220 W, 100 ms samples), all four outside ±10 %:
+
+| Card | Class | Measured | Model | Error |
+|---|---|---|---|---|
+| Gigabyte (the pass-3 card, inferred) | compute | 1845 MHz | 1252 MHz | −32.1 % |
+| ASUS Tuf | compute | 1770 MHz | 1252 MHz | −29.3 % |
+| Gigabyte | memory | 1845 MHz | 1500 MHz | −18.7 % |
+| ASUS Tuf | memory | 1695 MHz | 1500 MHz | −11.5 % |
+
+Same card, same limit, same class, 30–40 % apart: one card reading the whole model draws far more power per MHz than
+one stage of a split. Two load classes do not capture how much of the card a load uses. Named known misses in the
+tests; the mechanism that would capture it is listed as an avenue (proposal §10).

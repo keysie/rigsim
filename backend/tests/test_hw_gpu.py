@@ -66,14 +66,40 @@ def test_sms_read_vram_at_its_bandwidth():
     assert abs(r["rate_bps"] - 936.2 * GB) < 1e3 and r["bottleneck"] == "storage:gpu1.vram"
 
 
-def test_power_curve_applies_per_primitive():
-    csv = "power_w,value\n220,1605\n250,1740\n300,1830\n350,1860\n"          # an SM-clock curve (made up for the test)
-    sm = PowerCurve.from_csv(csv, tdp_w=350)
+def test_clock_comes_from_the_state_load_class_curve():
+    from app.hw.gpu import set_load_class
+    curves = {("sm_clock", "compute"): PowerCurve.from_csv("power_w,value\n220,1250\n300,1670", source="t"),
+              ("sm_clock", "memory"): PowerCurve.from_csv("power_w,value\n220,1500\n300,1770", source="t")}
     m = Machine(); m.add(Router("cpu"))
-    dev = add_gpu(m, "g", "rtx-3090", "cpu", slot_gen=4, slot_lanes=16, power_limit_w=250, curves={"sm_clock": sm})
-    assert abs(m.nodes["g.sm"].clock_hz - 1695e6 * 1740 / 1860) < 1e3
-    assert m.nodes["g.vram"].bandwidth_bps == 936.2 * GB                     # no VRAM curve: flat, unmeasured
-    assert dev.unmeasured() == ["vram_bandwidth"]
+    add_gpu(m, "g", "rtx-3090", "cpu", slot_gen=4, slot_lanes=16, power_limit_w=260, curves=curves)
+    st = set_load_class(m, "g", "compute")
+    assert abs(m.nodes["g.sm"].clock_hz - 1460e6) < 1e3 and st["sm_clock_basis"].startswith("measured")
+    set_load_class(m, "g", "memory")
+    assert abs(m.nodes["g.sm"].clock_hz - 1635e6) < 1e3
+    assert st["vram_bps"] == 936.2 * GB and st["vram_basis"].startswith("unmeasured")      # no VRAM curve: spec
+
+
+def test_clock_fallbacks_are_labelled():
+    from app.hw.gpu import set_load_class
+    m = Machine(); m.add(Router("cpu"))
+    add_gpu(m, "a", "rtx-3090", "cpu", slot_gen=4, slot_lanes=16)
+    assert set_load_class(m, "a", "compute")["sm_clock_basis"].startswith("unmeasured")
+    assert m.nodes["a.sm"].clock_hz == 1695e6                                            # spec boost
+    one = {("sm_clock", "compute"): PowerCurve(points=[(450, 2733)], basis="inferred", source="t")}
+    add_gpu(m, "b", "rtx-4090", "cpu", slot_gen=4, slot_lanes=16, power_limit_w=300, curves=one)
+    st = set_load_class(m, "b", "compute")
+    assert "extrapolated" in st["sm_clock_basis"] and m.nodes["b.sm"].clock_hz == 2733e6
+    assert "other load class" in set_load_class(m, "b", "memory")["sm_clock_basis"]
+
+
+def test_load_class_from_the_operation_mix():
+    from app.hw.loadclass import classify
+    big_gemm = ("fp16_tensor", 2 * 8192 ** 3, 3 * 8192 ** 2 * 2)          # high arithmetic intensity
+    gemv = ("fp16_tensor", 2 * 8192 ** 2, 8192 ** 2 * 2)                   # 1 op per byte
+    assert classify("rtx-3090", "cuda-12.8", [big_gemm])[0] == "compute"
+    assert classify("rtx-3090", "cuda-12.8", [gemv] * 10)[0] == "memory"
+    cls, share = classify("rtx-3090", "cuda-12.8", [big_gemm, gemv])
+    assert cls == "compute" and 0.5 < share < 1.0
 
 
 def test_router_cpu_cycles_compete():

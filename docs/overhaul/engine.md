@@ -70,6 +70,11 @@ Four primitives; a part (card, CPU package, board) is a bundle of them; the mach
 - **CPU architecture is topology.** Differences between architectures are modelled by the package's topology
   (e.g. a link per chiplet to the I/O die on AMD Zen desktop parts, sub-NUMA clusters), guided by the spec sheet
   and architecture documentation of the CPU model or generation; no per-architecture efficiency constants.
+- **GPU clock per state (agreed 2026-10-27):** no feedback loop between load and clock. Curves store the absolute SM
+  clock (and VRAM bandwidth) against the power limit, per card and per load class ("compute" / "memory"). Each
+  state classifies its operation mix per device once, by roofline at the nominal clock (`hw/loadclass.py`), and
+  takes the clock from that class's curve at the device's limit. The spec boost is only the fallback without a
+  curve (marked unmeasured). Temperatures are out of scope.
 - **Power** belongs to the device (card, CPU package). Each primitive in a power-limited device has its own curve:
   its scalable parameter vs the device's power limit (a 3090: GPU clock falls quickly and non-linearly, VRAM clock
   not at all). Curves for parts with data; users can upload their own as CSV.
@@ -111,6 +116,12 @@ read/write turnaround (inference is almost all reads); thermals beyond the power
   clock vs power limit under compute-heavy and memory-heavy load, host-device copies, reference GEMM per precision).
 
 ## 10. Possible avenues of improvement (not planned)
+
+- **Clock from power per operation** (each operation class costs cycles and energy, energy per op scaling with
+  V(f)^2 along the card's V/F table, VRAM energy per byte, static power; the clock solved per state where board
+  power meets the limit). Discussed 2026-10-27 and set aside as too complex; the two load classes stand in.
+  Evidence for needing more than two classes: the same 3090 at 220 W reads at 1252 MHz on one card (whole model)
+  but ~1.8 GHz in a two-card split (half the layers each) — see yardsticks, power curves.
 
 Decided 2026-10-27: too detailed for now, and they would limit how well the model generalises. Kept here in case the
 final simulator needs them, with the evidence that suggested them.
