@@ -70,6 +70,14 @@ Four primitives; a part (card, CPU package, board) is a bundle of them; the mach
 - **CPU architecture is topology.** Differences between architectures are modelled by the package's topology
   (e.g. a link per chiplet to the I/O die on AMD Zen desktop parts, sub-NUMA clusters), guided by the spec sheet
   and architecture documentation of the CPU model or generation; no per-architecture efficiency constants.
+- **Spec-sheet first, no per-card fitting (agreed 2026-10-27, supersedes per-card curves as the default):** every
+  card-specific value comes from the spec sheet (SMs, per-SM rates, boost and base clock, TDP, VRAM bandwidth, PCIe).
+  Measurements may only set a handful of global constants shared by an architecture or by all GPUs (e.g. one
+  exponent for clock vs power below the limit: clock ~ power^(1/3), since voltage rises with clock), checked on
+  our cards and public data, never tuned per card. Default GPU clock: boost for light load, near base at the full
+  limit for heavy load, the shared law below the limit. Expected accuracy ~10-20 % per card, enough for choosing
+  hardware. Users can override any card with their own measured curve in the UI. Per-card calibration is revisited
+  only once submissions provide many trustworthy points per model.
 - **GPU clock per state (agreed 2026-10-27):** no feedback loop between load and clock. Curves store the absolute SM
   clock (and VRAM bandwidth) against the power limit, per card and per load class ("compute" / "memory"). Each
   state classifies its operation mix per device once, by roofline at the nominal clock (`hw/loadclass.py`), and
