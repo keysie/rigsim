@@ -97,3 +97,25 @@ Observations (no model change):
 - One fixed latency term per platform is too coarse (Skylake's term on Cascade Lake: +11 % local latency).
 - Statistics: the source publishes one MLC run per node type; the only spread available is between the two sockets
   (≤ 1.6 %). The validation is consistency, not a statistical test.
+
+## Yardstick 2: one Linux system at ten DDR5 speeds (iteration 2)
+
+Source: Phoronix, "DDR5-6000 Memory Performance On Linux" (2022), result file openbenchmarking.org/result/
+2202236-PTS-DDR5600092. Core i9-12900K (8 P + 8 E), ASUS ROG STRIX Z690-E, 2 x 16 GB DDR5, Ubuntu 22.04, STREAM at
+3000–6000 MT/s, N = 5 runs each (standard error 0.0–0.7 %). Timings per speed not published; no latency test.
+Code: `backend/app/hw/yardsticks/phoronix_ddr5.py`.
+
+STREAM writes as well as reads, and counts bytes differently from the traffic on the RAM; that ratio is the same at
+every speed, so the efficiency is fitted at one speed and the model's claim is tested: bandwidth = channels x
+transfer rate x 8 bytes x a constant efficiency.
+
+| MT/s | 3000 | 3200 | 3600 | 3800 | 4200 | 4600 | 5000 | 5400 | 5600 | 6000 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Triad / peak | 0.652 | 0.668 | 0.711 | 0.729 | 0.682 | 0.688 | 0.767 | 0.763 | 0.761 | 0.760 |
+| Model error (fitted at 6000) | +16.5 % | +13.7 % | +6.9 % | +4.3 % | +11.4 % | +10.4 % | −0.9 % | −0.4 % | 0.0 % | fit |
+| Copy: model error | +9.5 % | +8.2 % | +3.2 % | +0.8 % | +9.4 % | +9.0 % | −1.0 % | −0.6 % | 0.0 % | fit |
+
+- 5000–6000 MT/s: the model holds within ±1 %.
+- Below 5000 the efficiency is not constant: it falls with speed, with an extra dip at 4200/4600. The deviations are
+  far outside the measurement's spread. Unknown timings per speed are the obvious suspect, but the model has no
+  timing beyond CAS in its access time, and access time does not enter bandwidth. Open for discussion.
