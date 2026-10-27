@@ -70,6 +70,13 @@ Four primitives; a part (card, CPU package, board) is a bundle of them; the mach
 - **CPU architecture is topology.** Differences between architectures are modelled by the package's topology
   (e.g. a link per chiplet to the I/O die on AMD Zen desktop parts, sub-NUMA clusters), guided by the spec sheet
   and architecture documentation of the CPU model or generation; no per-architecture efficiency constants.
+- **Spec-sheet first for all hardware (agreed 2026-10-27):** CPUs, GPUs, memory, drives and boards alike. Structure
+  and every device-specific value come from vendor documentation (spec sheets, whitepapers, optimisation manuals);
+  measurements may only set a few global constants. Where a result disagrees, the model is examined first, never
+  patched with a per-device constant. To revise for CPUs (fitted per system today): RAM efficiency, the fixed
+  latency term, socket-link latency, chiplet-link efficiency, per-core bandwidth (candidate from documentation:
+  outstanding misses per core x 64 B / latency). Drives: bandwidth and IOPS from the spec sheet; cache tiers
+  (DRAM, SLC) only where documented.
 - **Spec-sheet first, no per-card fitting (agreed 2026-10-27, supersedes per-card curves as the default):** every
   card-specific value comes from the spec sheet (SMs, per-SM rates, boost and base clock, TDP, VRAM bandwidth, PCIe).
   Measurements may only set a handful of global constants shared by an architecture or by all GPUs (e.g. one
