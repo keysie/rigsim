@@ -67,6 +67,9 @@ Four primitives; a part (card, CPU package, board) is a bundle of them; the mach
   primitives: compute rate per operation class, and the bandwidth one core sustains (its link). An operation takes
   the larger of the two times; which one binds emerges. Engine workers map onto cores. Hyperthreads (later, if
   ever): two computes sharing one link.
+- **CPU architecture is topology.** Differences between architectures are modelled by the package's topology
+  (e.g. a link per chiplet to the I/O die on AMD Zen desktop parts, sub-NUMA clusters), guided by the spec sheet
+  and architecture documentation of the CPU model or generation; no per-architecture efficiency constants.
 - **Power** belongs to the device (card, CPU package). Each primitive in a power-limited device has its own curve:
   its scalable parameter vs the device's power limit (a 3090: GPU clock falls quickly and non-linearly, VRAM clock
   not at all). Curves for parts with data; users can upload their own as CSV.
@@ -102,10 +105,25 @@ read/write turnaround (inference is almost all reads); thermals beyond the power
 
 ## 9. Open
 
-- RAM bandwidth vs transfer rate: constant efficiency holds at 5000–6000 MT/s but overshoots below (yardstick 2,
-  up to +16.5 %). Cause unknown (timings, controller mode or software); looking for data with published timings
-  before any model change.
-- Which microbenchmarks define each primitive (core-type compute per operation class, single-core bandwidth, GPU
-  clock vs power limit under compute-heavy and memory-heavy load, host-device copies, reference GEMM per precision).
 - Strata at small expert caches: prompt reading was PCIe-bound (239 tok/s at every worker count, pass 3); the CPU
   expert path in writing is limited per core (compute or per-core bandwidth, not yet separated).
+- Which microbenchmarks define each primitive (core-type compute per operation class, single-core bandwidth, GPU
+  clock vs power limit under compute-heavy and memory-heavy load, host-device copies, reference GEMM per precision).
+
+## 10. Possible avenues of improvement (not planned)
+
+Decided 2026-10-27: too detailed for now, and they would limit how well the model generalises. Kept here in case the
+final simulator needs them, with the evidence that suggested them.
+
+- **Per-core link as requests in flight** (bandwidth = outstanding lines x 64 B / latency) instead of a bandwidth.
+  Evidence: single-thread copy rising sublinearly with transfer rate (Phoronix), Little's-law estimates from TU
+  Dresden ladders; weak (copy includes writes, prefetchers blur it).
+- **Refresh share in the RAM efficiency** (1 - tRFC / tREFI, nanosecond values). Evidence: one tREFI-only step
+  (+9.9 % read, ocinside, single run, behind a fabric cap) and the datasheet arithmetic.
+- **Timings in bandwidth** more generally (row switching, write turnaround). Evidence: igor'sLAB secondary timings
+  (+3.5 % reads, +10.6 % mixed), JEDEC profile ~10 % below XMP; yardstick 2's low-speed drop is STREAM-specific
+  (RAMspeed on the same runs holds within ±3 %).
+- **Uncore clock in the latency term** (controller/fabric term in uncore cycles). Evidence: igor'sLAB uncore-only
+  step (-11.6 ns, bandwidth unchanged); possibly the Skylake vs Cascade Lake gap.
+- **Power-state dependent latency** (Arrow Lake E-cores see higher DRAM latency unless a P-core is active).
+- **Latency under load** (loaded-latency curves; fixed access time today).

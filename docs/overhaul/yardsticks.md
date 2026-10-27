@@ -120,7 +120,9 @@ transfer rate x 8 bytes x a constant efficiency.
   far outside the measurement's spread. Unknown timings per speed are the obvious suspect, but the model has no
   timing beyond CAS in its access time, and access time does not enter bandwidth.
 
-**Status (2026-10-26):** documented miss, model unchanged (option 1). Next: look for scaling data with published
+**Status (2026-10-27):** closed as a documented miss; model unchanged. RAMspeed Triad on the same runs stays within
+±3 % of a constant efficiency, so the drop is STREAM-specific. Timing effects are listed as a possible avenue of
+improvement in the proposal (§10). Earlier note: Next: look for scaling data with published
 timings (option 3) to decide whether timings should affect bandwidth (option 2). Treat every explanation as
 suspicious until data separates it: timings, BIOS / memory-controller mode, or software (compiler, OS, STREAM build).
 
@@ -151,3 +153,30 @@ What it separates (each a single observation, not yet statistics):
 
 Status: suggestive, not valid data yet (one system, single runs, no spread). Needed before a model change: the same
 kind of one-variable-at-a-time study on other systems, with repeats.
+
+## RAM benchmark database as validation points (2026-10-27)
+
+`backend/app/hw/yardsticks/data/ram-bench-data.json` (schema v1, compiled in a separate research chat: 10 sources,
+39 entries, every field marked stated / inferred / not stated). Used for validation only, never for fitting, at
+**medium or low trust**: low if anecdotal, reader- or forum-submitted, rounded, partial or missing primaries; medium
+otherwise. Nothing is high trust (1 of 39 entries has a spread, 2 run on Linux; values for the same hardware differ
+between sources by up to 12 %), so comparisons stay within one source's sequence. Tolerances: medium ±5 %, low ±10 %.
+Harness: `validate_ramdb.py`; tests: `tests/test_hw_ramdb.py`.
+
+CPU topologies come from spec sheets and architecture documentation (`backend/app/hw/cpus.py`): AMD Zen 4/5 desktop
+parts get one link per chiplet to the I/O die (32 B read per fabric clock); Arrow Lake and APUs are monolithic for
+now (tile link not documented). Per group, one parameter is fitted on the first point: the chiplet-link efficiency
+where that link binds, else the RAM efficiency. The AMD RAM efficiency is inherited within the architecture from the
+single-DIMM point (tpu-04: 0.959).
+
+| Group | Held-out points | Result |
+|---|---|---|
+| ocinside 7800X3D (5200–6400 MT/s, FCLK 1733–2167) | 6 | steps 2–4 within ±0.5 %; tREFI and later steps −8.5 % (refresh not modelled; known misses) |
+| ocinside 9800X3D (5600–6400) | 2 | −1.4 %, −1.6 % |
+| TechPowerUp 9800X3D (4800–8000, read flat) | 6 | 0.0 % (the chiplet link binds throughout) |
+| Hardwareluxx 285K (5600–7200) | 3 | +0.9 %, +1.5 %, −4.7 % |
+| igor'sLAB 265K (D2D / NGU clocks only) | 3 | −2.3 … −3.8 % (no tile link modelled) |
+| FPS Review DDR4 (2667–3933) | 2 | +0.6 %, +1.9 % |
+
+Finding: the chiplet-link efficiency for the same CPU and fabric clock differs between sources (0.877 ocinside vs
+0.994 TechPowerUp): tool version or settings, not hardware.
