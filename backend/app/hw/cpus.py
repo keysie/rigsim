@@ -15,6 +15,13 @@ CPUS = {
                             source="AMD product page (8 cores, 1 CCD, 2 ch DDR5); Zen 5 IFOP 32 B/clk read (AMD, Chips and Cheese)"),
     "Ryzen 9 9950X3D": dict(arch="zen5", topology="chiplet", ccds=2, cores_per_ccd={"zen5": 8}, channels=2,
                             ccd_read_bytes_per_fclk=32, source="AMD product page (16 cores, 2 CCDs, 2 ch DDR5)"),
+    "Xeon Gold 6248": dict(arch="cascadelake", topology="monolithic", cores={"clx": 20}, channels=6, snc=2,
+                           source="Intel ARK (20 cores, 6 ch DDR4-2933); 2 memory controllers x 3 channels, SNC splits the "
+                                  "die in two (Velten et al., ICPE 2022)"),
+    "EPYC 7702": dict(arch="zen2", topology="chiplet", ccds=8, cores_per_ccd={"zen2": 8}, channels=8,
+                      ccd_read_bytes_per_fclk=32, nps=4, fclk_nominal_mhz=1467,
+                      source="AMD product page (64 cores, 8 CCDs, 8 ch DDR4-3200); IFOP 32 B/clk read, nominal FCLK "
+                             "1467 MHz, NPS4 = 2 CCDs + 2 channels per quadrant (Velten et al., ICPE 2022)"),
     "Core Ultra 9 285K": dict(arch="arrowlake", topology="monolithic", cores={"p": 8, "e": 16}, channels=2,
                               source="Intel ARK (8 P + 16 E, 2 ch DDR5); compute-to-SoC tile link not documented"),
     "Core Ultra 7 265K": dict(arch="arrowlake", topology="monolithic", cores={"p": 8, "e": 12}, channels=2,

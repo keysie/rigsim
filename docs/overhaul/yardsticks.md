@@ -180,3 +180,29 @@ single-DIMM point (tpu-04: 0.959).
 
 Finding: the chiplet-link efficiency for the same CPU and fabric clock differs between sources (0.877 ocinside vs
 0.994 TechPowerUp): tool version or settings, not hardware.
+
+## Yardstick 4: core ladders (TU Dresden, ICPE 2022)
+
+Velten, Schöne, Ilsche, Hackenberg, "Memory Performance of AMD EPYC Rome and Intel Cascade Lake SP Server
+Processors". Configuration verified against the paper's Table 1: 2 x Xeon Gold 6248 (12 x 32 GiB DDR4-2933, SNC,
+cores pinned to 1.6 GHz) and 2 x EPYC 7702 (16 x 32 GiB DDR4-3200, NPS4, 2.0 GHz, nominal FCLK 1467 MHz); BenchIT
+load-only kernels, maximum of 120 samples per point. Bandwidth values taken from the paper's heat-map figures via the
+research report: **medium trust**. Code: `backend/app/hw/yardsticks/tud_ladders.py`; tests: `test_hw_ladders.py`.
+
+Topology from spec sheets (`cpus.py`, `arch.domain`): one sub-NUMA cluster = 10 cores and 3 channels; one NPS4
+quadrant = 2 chiplets (8 cores each, link 32 B x 1467 MHz = 46.9 GB/s) and 2 channels. Fitted on the AVX ladder:
+per-core bandwidth (1 core), RAM efficiency, and on Rome the chiplet-link efficiency (one chiplet's plateau).
+
+| | Fitted | Held out |
+|---|---|---|
+| CLX, AVX-512 | 1 core 11.5 GB/s; RAM eff 0.862 | 2: +0.9 %, **4: +6.2 %**, 8: +0.5 % |
+| CLX, SSE (per-core refitted) | 1 core 10.7 | 2: −2.3 %, 4: −2.3 %, 8: +0.8 %, 10: +2.0 % |
+| Rome, AVX | 1 core 21.0; link eff 0.784; RAM eff 0.836 | **2: +5.4 %**, 4: +1.1 %, 8: +2.8 % |
+| Rome, SSE (per-core refitted) | 1 core 17.7 | **2: +9.3 %**, 3: 0.0 %, 4: +0.5 %, 8: +3.1 %, 16: +0.2 % |
+
+- First identification of the per-core link: 11.5 GB/s (CLX at 1.6 GHz, AVX-512), 21.0 GB/s (Zen 2 at 2.0 GHz, AVX).
+- The caps carry across instruction width (SSE plateaus within 3 % of caps fitted on AVX), and a second chiplet
+  lifts Rome's cap to the channels, as the topology says.
+- Known misses: the point just before saturation (+5…9 %). Max-min fills linearly up to a cap; real saturation is
+  gradual — the "latency under load" avenue (proposal §10). Rome's one-chiplet plateau also sags slightly with more
+  cores (36.8 → 35.8 GB/s from 3 to 8 cores); the model is flat.
