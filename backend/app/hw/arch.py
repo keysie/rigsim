@@ -24,15 +24,24 @@ def core_link_from_queue(spec: dict | None, core_type: str, latency_s: float) ->
     return q * LINE_B / latency_s if q else None
 
 
-def _channels(m: Machine, router: str, mts: float, channels: int, eff_dram: float, cl: int | None = None) -> list[str]:
-    """Each channel its own simplex link and storage (8 bytes per transfer per channel)."""
-    per = mts * 1e6 * 8
+# JEDEC: a DDR4 channel is one 64-bit bus; a DDR5 DIMM channel is two independent 32-bit sub-channels, each with its
+# own command bus, banks and refresh.
+SUBCHANNELS = {"ddr4": 1, "ddr5": 2}
+
+
+def _channels(m: Machine, router: str, mts: float, channels: int, eff_dram: float, cl: int | None = None,
+              mem_type: str | None = None) -> list[str]:
+    """Each (sub-)channel its own simplex link and storage. DDR4: 8 bytes per transfer per channel; DDR5: two
+    sub-channels of 4 bytes each per channel. Unknown type: one 64-bit channel (the same peak)."""
+    k = SUBCHANNELS.get((mem_type or "").lower(), 1)
+    per = mts * 1e6 * 8 / k
     names = []
     for c in range(channels):
-        n = f"ch{c}"
-        m.add(Storage(n, capacity_b=16 * 2**30, bandwidth_bps=per * eff_dram, access_s=access_s(mts, cl)))
-        m.connect(Link(f"bus{c}", n, router, per, duplex=False))
-        names.append(n)
+        for s in range(k):
+            n = f"ch{c}" if k == 1 else f"ch{c}.sub{s}"
+            m.add(Storage(n, capacity_b=16 * 2**30 / k, bandwidth_bps=per * eff_dram, access_s=access_s(mts, cl)))
+            m.connect(Link(f"bus.{n}" if k > 1 else f"bus{c}", n, router, per, duplex=False))
+            names.append(n)
     m.interleave("ram", names)
     return names
 
@@ -49,8 +58,8 @@ def domain(spec: dict) -> dict:
 
 
 def build(spec: dict | None, mts: float, channels: int, eff_dram: float | None = None, fclk_mhz: float | None = None,
-          eff_link: float | None = None, core_link_bps: float | None = None, cl: int | None = None
-          ) -> tuple[Machine, list[str]]:
+          eff_link: float | None = None, core_link_bps: float | None = None, cl: int | None = None,
+          mem_type: str | None = None) -> tuple[Machine, list[str]]:
     """Returns the machine and the core groups that read. Unknown CPU: one generic core group, monolithic.
     Efficiencies default to the global constants. `core_link_bps`: what one core sustains (its own link to its
     router); None = from the documented miss queue (Little's law) where sourced, else not identified."""
@@ -61,7 +70,7 @@ def build(spec: dict | None, mts: float, channels: int, eff_dram: float | None =
     groups: list[str] = []
     if spec and spec["topology"] == "chiplet" and fclk_mhz:
         m.add(Router("iod"))
-        _channels(m, "iod", mts, channels, eff_dram, cl)
+        _channels(m, "iod", mts, channels, eff_dram, cl, mem_type)
         for d in range(spec["ccds"]):
             r = f"ccd{d}"
             m.add(Router(r))
@@ -74,7 +83,7 @@ def build(spec: dict | None, mts: float, channels: int, eff_dram: float | None =
                 groups.append(g)
     else:
         m.add(Router("pkg"))
-        _channels(m, "pkg", mts, channels, eff_dram, cl)
+        _channels(m, "pkg", mts, channels, eff_dram, cl, mem_type)
         for t, n in ((spec or {}).get("cores") or {"generic": 8}).items():
             m.add(Compute(t, clock_hz=0.0, count=n))
             bps = core_link_bps if core_link_bps is not None else core_link_from_queue(spec, t, lat)

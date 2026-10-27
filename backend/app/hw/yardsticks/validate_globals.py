@@ -57,7 +57,7 @@ def cpu_rows() -> list[dict]:
                              "GB/s", "medium", "held_out"))
     from .validate_ramdb import lookup                   # same CPU lookup the RAM database uses
     for p in ramdb.points():
-        m, groups = arch.build(lookup(p["cpu"]), p["mts"], p["channels"], fclk_mhz=p["fclk"])
+        m, groups = arch.build(lookup(p["cpu"]), p["mts"], p["channels"], fclk_mhz=p["fclk"], mem_type=p["mem_type"])
         model = arch.all_cores_read_gbs(m, groups)
         role = "calibration" if lookup(p["cpu"]) and lookup(p["cpu"])["topology"] == "chiplet" else "held_out"
         rows.append(_row(f"RAM db {p['source']}", f"{p['id']} {p['cpu']} {p['mts']} ch{p['channels']}", p["read_gbs"],

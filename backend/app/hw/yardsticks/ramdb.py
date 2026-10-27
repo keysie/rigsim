@@ -64,5 +64,6 @@ def points() -> list[dict]:
                         step=seq.get("step"), change=seq.get("changed_from_previous"),
                         cpu=val(e["system"].get("cpu")), mts=val(e["memory"]["mt_s"]),
                         channels=val(e["memory"]["channels"]), fclk=val((e.get("clocks") or {}).get("fclk_mhz")),
+                        mem_type=val(e["memory"].get("type")),
                         tool=val(e["tool"].get("name")), read_gbs=rd, peak_gbs=peak_gbs(e), trust=trust(e, sources)))
     return out
