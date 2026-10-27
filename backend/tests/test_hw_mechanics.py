@@ -56,3 +56,33 @@ def test_duplex_directions_are_independent_and_remote_reads_share_the_socket_lin
 def test_unidentified_parameters_are_reported():
     r = two_socket(None).solve_reads([Read("x", "s0.cores", "s0.ram")])["x"]
     assert "s0.corelink" in r["unidentified_on_path"] and "s0.router" in r["unidentified_on_path"]
+
+
+def channels(bw_per_channel):
+    m = Machine()
+    m.add(Router("r")); m.add(Compute("cores", clock_hz=2e9, count=8))
+    m.connect(Link("cl", "cores", "r", None, per_unit=True))
+    for i, bw in enumerate(bw_per_channel):
+        m.add(Storage(f"ch{i}", capacity_b=16 * GB, bandwidth_bps=bw, access_s=80e-9))
+        m.connect(Link(f"bus{i}", f"ch{i}", "r", 25.6 * GB, duplex=False))
+    m.interleave("ram", [f"ch{i}" for i in range(len(bw_per_channel))])
+    return m
+
+
+def test_interleaved_stream_spreads_over_all_channels():
+    r = channels([20 * GB] * 4).solve_reads([Read("x", "cores", "ram")])["x"]
+    assert abs(r["rate_bps"] - 80 * GB) < 1
+
+
+def test_interleaving_is_held_back_by_the_slowest_channel():
+    # equal shares per channel: one channel at 5 GB/s caps the stream at 4 x 5
+    r = channels([20 * GB, 20 * GB, 20 * GB, 5 * GB]).solve_reads([Read("x", "cores", "ram")])["x"]
+    assert abs(r["rate_bps"] - 20 * GB) < 1 and r["bottleneck"] == "storage:ch3"
+
+
+def test_channels_are_independent():
+    # a second reader pinned to one channel only slows the interleaved stream through that channel
+    m = channels([20 * GB] * 4)
+    res = m.solve_reads([Read("x", "cores", "ram", units=4), Read("y", "cores", "ch0", units=4)])
+    assert res["y"]["rate_bps"] > 0 and res["x"]["rate_bps"] < 80 * GB
+    assert abs(res["x"]["rate_bps"] / 4 + res["y"]["rate_bps"] - 20 * GB) < 1     # ch0 is full, the others are not

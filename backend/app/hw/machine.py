@@ -22,6 +22,15 @@ class Machine:
         self.nodes: dict[str, Storage | Compute | Router] = {}
         self.links: dict[str, Link] = {}
         self._adj: dict[str, list[Link]] = {}
+        self.interleaved: dict[str, list[str]] = {}
+
+    def interleave(self, name: str, storages: list[str]) -> None:
+        """A memory controller spreads addresses evenly over these storages (e.g. one per channel): a stream read
+        from `name` puts an equal share of its bytes on each member and its path."""
+        for s in storages:
+            if not isinstance(self.nodes.get(s), Storage):
+                raise KeyError(f"interleave {name}: {s} is not a storage")
+        self.interleaved[name] = list(storages)
 
     def add(self, obj):
         self.nodes[obj.id] = obj
@@ -63,7 +72,11 @@ class Machine:
         return list(reversed(hops))
 
     def idle_latency_s(self, compute: str, storage: str) -> float:
-        """One access with nothing else running: link and router latencies on the path plus the storage's access time."""
+        """One access with nothing else running: link and router latencies on the path plus the storage's access time.
+        For an interleaved set: the mean over its members (one access lands on one of them)."""
+        if storage in self.interleaved:
+            members = self.interleaved[storage]
+            return sum(self.idle_latency_s(compute, s) for s in members) / len(members)
         t = self.nodes[storage].access_s
         for l, reached in self.path(compute, storage):
             t += l.latency_s
@@ -81,35 +94,40 @@ class Machine:
         for rd in reads:
             comp = self.nodes[rd.compute]
             units = comp.count if rd.units is None else min(rd.units, comp.count)
-            used, own_cap, unknown = [], None, []
-            st = self.nodes[rd.storage]
-            hops = self.path(rd.storage, rd.compute)          # data flows storage -> compute
-            src = rd.storage
-            for l, reached in hops:
-                direction = "ab" if (l.a == src) else "ba"
-                if l.per_unit:
-                    if l.bandwidth_bps is None:
-                        unknown.append(l.id)
+            members = self.interleaved.get(rd.storage, [rd.storage])
+            share = 1.0 / len(members)
+            used: dict[str, float] = {}
+            own_cap, unknown = None, []
+            for member in members:
+                st = self.nodes[member]
+                src = member
+                for l, reached in self.path(member, rd.compute):       # data flows storage -> compute
+                    direction = "ab" if (l.a == src) else "ba"
+                    if l.per_unit:
+                        if l.bandwidth_bps is None:
+                            unknown.append(l.id)
+                        else:
+                            cap = l.bandwidth_bps * units
+                            own_cap = cap if own_cap is None else min(own_cap, cap)
                     else:
-                        cap = l.bandwidth_bps * units
-                        own_cap = cap if own_cap is None else min(own_cap, cap)
+                        key = f"link:{l.id}:{direction if l.duplex else 'shared'}"
+                        if l.bandwidth_bps is None:
+                            unknown.append(l.id)
+                        else:
+                            capacity[key] = l.bandwidth_bps; used[key] = used.get(key, 0.0) + share
+                    node = self.nodes[reached]
+                    if isinstance(node, Router):
+                        if node.forward_bps is None:
+                            unknown.append(node.id)
+                        else:
+                            key = f"router:{node.id}"
+                            capacity[key] = node.forward_bps; used[key] = used.get(key, 0.0) + share
+                    src = reached
+                if st.bandwidth_bps is None:
+                    unknown.append(st.id)
                 else:
-                    key = f"link:{l.id}:{direction if l.duplex else 'shared'}"
-                    if l.bandwidth_bps is None:
-                        unknown.append(l.id)
-                    else:
-                        capacity[key] = l.bandwidth_bps; used.append(key)
-                node = self.nodes[reached]
-                if isinstance(node, Router):
-                    if node.forward_bps is None:
-                        unknown.append(node.id)
-                    else:
-                        capacity[f"router:{node.id}"] = node.forward_bps; used.append(f"router:{node.id}")
-                src = reached
-            if st.bandwidth_bps is None:
-                unknown.append(st.id)
-            else:
-                capacity[f"storage:{st.id}"] = st.bandwidth_bps; used.append(f"storage:{st.id}")
+                    key = f"storage:{st.id}"
+                    capacity[key] = st.bandwidth_bps; used[key] = used.get(key, 0.0) + share
             flows[rd.id] = (float(units), used, own_cap)
             unidentified[rd.id] = sorted(set(unknown))
         rates, bottleneck = max_min_fair_share(capacity, flows)
