@@ -1,0 +1,31 @@
+# rigsim hardware bench — site configuration. Copy to config.local.yml (git-ignored) and adjust.
+# Nothing secret belongs here: the AI-SERVER inventory and vault are reused where they are.
+
+# The AI-SERVER Ansible directory on the Ansible VM: its inventory/hosts.yml (hosts by alias) and inventory/private
+# (addresses, group_vars, vault) are the inventory sources of every run.
+ai_server_ansible: ~/AI-SERVER/ansible
+# The vault vars file, loaded explicitly (password once per session, as in AI-SERVER:
+#   read -rs VP && printf '%s' "$VP" > /dev/shm/vp && chmod 600 /dev/shm/vp && unset VP
+#   export ANSIBLE_VAULT_PASSWORD_FILE=/dev/shm/vp)
+vault_file: ~/AI-SERVER/ansible/inventory/private/group_vars/all/vault.yml
+
+target: ai-server                  # host alias of the machine to measure
+build_host: localhost              # where probe images are built and pushed (Docker + internet; the Ansible VM)
+
+# Registry: the host comes from an inventory variable (private), the project path must be readable by the box's
+# existing deploy token (read_registry) — e.g. the project that already holds the box's images.
+registry_var: internal_ca_docker_registry
+registry_project: ai/rigsim-hwbench
+registry_user_var: rigsim_registry_user      # vault variable names with push credentials (build host only)
+registry_token_var: rigsim_registry_token
+
+rundir_parent: /var/lib/rigsim-hwbench       # on the target: one directory per question (state, results, samples)
+testdir_parent: /srv/ai                      # on the target: the disk the nvme question reads (temporary directory)
+keep_running: []                             # container name globs left running for exclusive questions
+gpu_names: {}                                # PCI bus id -> card name (names go into the results, bus ids never)
+#  "0000:17:00.0": 3060
+#  "0000:65:00.0": 3090-gigabyte
+results_dir: ~/rigsim-hwbench-results        # on the Ansible VM: fetched runs and their archives
+max_hours: 12                                # the play stops the run cleanly after this long
+min_free_gb: 5
+notify_url_var: bench_notify_url             # optional vault variable: Uptime Kuma push URL

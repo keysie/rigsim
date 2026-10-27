@@ -1,0 +1,28 @@
+question = "gpu-gemm"
+asks = """What share of the per-SM peak does the vendor's library (cuBLAS) reach per precision and matrix shape, at
+the clock the card actually runs — from decode-shaped (few rows) to prefill-shaped (square) products?"""
+feeds = """hw/rates.py MEASUREMENTS: per (GPU model, runtime = the image's CUDA version, operation class) the achieved
+share of SMs x measured SM clock x per-SM rate. The reference the engines' kernel factors are relative to."""
+method = """cublasGemmEx on random data, 5 warm-up calls, then `reps` timed calls (CUDA events); median, min, max.
+Shapes MxNxK. INT8: A transposed, dimensions multiples of 4 (cuBLAS IMMA requirement)."""
+image = "cuda"
+gpus = "item"
+exclusive = true
+repeats = 1
+sample_ms = 100
+timeout_s = 300
+
+[grid]
+gpu = ["@all"]
+power_w = ["default"]
+prec = ["fp32", "tf32", "fp16_fp32acc", "fp16", "bf16", "int8"]
+shape = ["1x4096x4096", "8x4096x4096", "32x4096x4096", "128x4096x4096", "512x8192x8192", "2048x8192x8192",
+         "4096x4096x4096", "8192x8192x8192", "16384x16384x4096"]
+
+[args]
+reps = 50
+cmd = ["probe", "gemm", "--prec", "{prec}", "--shape", "{shape}", "--reps", "{reps}"]
+
+[smoke]
+grid = { prec = ["fp16", "int8"], shape = ["8x4096x4096", "4096x4096x4096"] }
+args = { reps = 5 }

@@ -1,0 +1,4 @@
+#!/bin/sh
+# nvbandwidth with JSON output, compacted to one line (the queue reads one JSON object per line).
+set -e
+nvbandwidth "$@" -j | python3 -c 'import json, sys; print(json.dumps({"mode": "nvbandwidth", "report": json.load(sys.stdin)}))'
