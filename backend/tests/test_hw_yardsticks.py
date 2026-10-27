@@ -60,3 +60,26 @@ def test_both_core_groups_take_part():
     m = p5.build(6000, 0.8)
     res = m.solve_reads([p5.Read("p", "pcores", "ram"), p5.Read("e", "ecores", "ram")])
     assert abs(res["p"]["rate_bps"] - res["e"]["rate_bps"]) < 1                  # 8 + 8 cores, equal weight per core
+
+
+# --- Yardstick 3 (candidate): Core Ultra 7 265K, five memory configurations (igor'sLAB, MLC 3.12) ----------------
+from app.hw.yardsticks import igorslab_arrowlake as il
+
+
+def test_rate_change_with_absolute_timings_kept_is_predicted():
+    """6000 CL28 vs 7800 CL36 (same absolute primary timings): constant efficiency holds within 1 %."""
+    assert abs(il.predicted_error("xmp7800", "xmp6000")) < 0.01
+
+
+def test_uncore_clock_moves_latency_not_bandwidth():
+    """Same rate and timings, only the uncore clock: reads +0.4 %, idle latency -11.6 ns. Consistent with the model
+    (the controller/fabric term is in latency only); it also means that term depends on the uncore clock."""
+    a, b = il.CONFIGS["xmp7800"], il.CONFIGS["xmp7800_uncore"]
+    assert abs(b[1] / a[1] - 1) < 0.01 and a[3] - b[3] > 10
+
+
+def test_finding_timings_do_enter_bandwidth():
+    """Finding, not a target: at the same rate, tighter secondary timings give +3.5 % reads (+10.6 % 1:1); the
+    JEDEC 5600 CL46 profile reads ~10 % below the XMP efficiency. The model has no path for this yet."""
+    assert -0.05 < il.predicted_error("xmp7800", "manual7800_uncore") < -0.025
+    assert 0.08 < il.predicted_error("xmp7800", "jedec5600") < 0.14

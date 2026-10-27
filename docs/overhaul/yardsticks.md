@@ -123,3 +123,31 @@ transfer rate x 8 bytes x a constant efficiency.
 **Status (2026-10-26):** documented miss, model unchanged (option 1). Next: look for scaling data with published
 timings (option 3) to decide whether timings should affect bandwidth (option 2). Treat every explanation as
 suspicious until data separates it: timings, BIOS / memory-controller mode, or software (compiler, OS, STREAM build).
+
+## Yardstick 3 (candidate): what timings and uncore do (tangent of option 3)
+
+Source: igor'sLAB, "Arrow Lake DDR5 in detail: memory clock, uncore, timings" (2026), Core Ultra 7 265K, Intel
+MLC 3.12, one system, five configurations changing one variable at a time. Single runs, no spread published; DIMM
+count inferred from the stated theoretical bandwidth. Code: `backend/app/hw/yardsticks/igorslab_arrowlake.py`.
+
+| Configuration | All reads / peak | 1:1 R/W | Idle latency | Model error (efficiency from XMP 7800) |
+|---|---|---|---|---|
+| JEDEC 5600 CL46 | 0.848 | 61.15 GB/s | 106.7 ns | +11.3 % |
+| XMP 6000 CL28 | 0.938 | 75.28 GB/s | 87.2 ns | +0.6 % |
+| XMP 7800 CL36 | 0.944 | 92.75 GB/s | 88.6 ns | fit |
+| 7800 + uncore OC | 0.947 | 92.59 GB/s | 77.0 ns | −0.4 % |
+| 7800 + uncore OC + tight secondary timings | 0.980 | 102.42 GB/s | 78.1 ns | −3.8 % |
+
+What it separates (each a single observation, not yet statistics):
+1. **Rate with absolute timings kept** (6000 CL28 → 7800 CL36): constant efficiency holds (+0.6 %). Supports the model.
+2. **Uncore clock alone:** bandwidth unchanged (+0.4 %), idle latency −11.6 ns. Supports the model's split (the
+   controller/fabric term is latency only) and shows that term depends on the uncore clock, a configuration value.
+3. **Secondary timings alone** (tRAS, tRFC, tREFI x 2.2, tWR, tWTR, tRTP, tRRD): reads +3.5 %, 1:1 +10.6 %. Timings do
+   enter bandwidth, more for mixed traffic (write-to-read turnaround) than for reads. Refresh alone accounts for
+   ~1.4 % of the read gain (tRFC / tREFI from 2.0 % to 0.7 % of the time).
+4. **JEDEC profile** (loose timings, 1.1 V class): ~10 % below the XMP efficiency — the size of yardstick 2's drop.
+   Plausible link to yardstick 2 (auto/JEDEC-like timings at its lower speeds), but voltages and controller mode
+   also differ between JEDEC and XMP, and yardstick 2's timings are unknown. Not established.
+
+Status: suggestive, not valid data yet (one system, single runs, no spread). Needed before a model change: the same
+kind of one-variable-at-a-time study on other systems, with repeats.
