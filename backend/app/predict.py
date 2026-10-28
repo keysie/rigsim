@@ -7,7 +7,8 @@ The machine is built from the run's own inventory: GPUs by nvidia-smi name and m
 power limits from nvidia-smi, PCIe link from inventory/pcie.json. What the model covers is predicted; everything
 else comes back as unsupported with the reason. No measurement of these runs went into rigsim's constants, so no
 prediction is marked as calibration. CPU memory (MLC idle latency, all-core read bandwidth): the CPU from the
-catalogue (cpus.py, Intel Core 6th-13th gen from intel_client.py with the inventory's core counts), the memory from
+catalogue (cpus.py; Intel Core 6th-13th gen from intel_client.py, AMD Ryzen 1000-7000 from amd_client.py, both
+with the inventory's core counts), the memory from
 dmidecode (type, configured speed, populated channels) and the SPD dump (tAA, die density)."""
 from __future__ import annotations
 
@@ -19,7 +20,7 @@ from pathlib import Path
 
 from .engine.llamacpp import cuda
 from .engine.model import ARCHS, FILE_TYPES, from_config
-from .hw import arch, intel_client
+from .hw import amd_client, arch, intel_client
 from .hw.cpus import lookup as cpu_lookup
 from .hw.execute import Op, execute
 from .hw.gpu import add_gpu
@@ -124,6 +125,18 @@ def core_counts(run: Path) -> dict[str, int]:
     return {"p": p, "e": len(per_core) - p} if per_core else {}
 
 
+def lscpu_topology(run: Path) -> dict:
+    """Physical cores and L3 slices (core complexes) from `lscpu -e` (column L1d:L1i:L2:L3)."""
+    f = run / "inventory" / "lscpu-e.txt"
+    cores, l3 = set(), set()
+    for line in (f.read_text(errors="replace").splitlines()[1:] if f.exists() else []):
+        cols = line.split()
+        if len(cols) >= 5 and cols[0].isdigit():
+            cores.add(f"{cols[2]}:{cols[3]}")
+            l3.add(f"{cols[2]}:{cols[4].split(':')[-1]}")
+    return dict(cores=len(cores), l3_slices=len(l3))
+
+
 def dimms(run: Path) -> list[dict]:
     """Populated memory devices from dmidecode -t memory: type, configured speed, size, locators, rank."""
     f = run / "inventory" / "dmidecode.txt"
@@ -169,7 +182,9 @@ def spd_timing(run: Path) -> dict:
 def cpu_memory_machine(run: Path):
     """(machine, core groups, parameters, why-not) for the CPU and its memory, from the run's inventory."""
     name = cpu_name(run)
-    spec = cpu_lookup(name) or intel_client.spec(name, core_counts(run))
+    topo = lscpu_topology(run)
+    spec = (cpu_lookup(name) or intel_client.spec(name, core_counts(run))
+            or amd_client.spec(name, topo["cores"], topo["l3_slices"]))
     if not spec:
         return None, None, None, f"CPU not in rigsim's catalogue: {name or 'unknown'}"
     ds = dimms(run)
@@ -190,8 +205,16 @@ def cpu_memory_machine(run: Path):
     channels = min(spec["channels"], len(chans) if chans else len(ds))
     spd = spd_timing(run)
     cl = round(spd["taa_ns"] * mts / 2000) if spd.get("taa_ns") else None
-    m, groups = arch.build(spec, mts, channels, cl=cl, mem_type=t, density_gbit=spd.get("density_gbit"))
-    params = dict(cpu=spec.get("arch"), cores=spec.get("cores"), mem=f"{t.upper()}-{mts}", channels=channels,
+    fclk = None
+    if spec.get("topology") == "chiplet":
+        fam = amd_client.family(name)
+        fclk = amd_client.fclk_mhz(fam, mts) if fam else None
+        if not fclk:
+            return None, None, None, f"fabric clock rule not documented for {name}"
+    m, groups = arch.build(spec, mts, channels, fclk_mhz=fclk, cl=cl, mem_type=t, density_gbit=spd.get("density_gbit"))
+    params = dict(cpu=spec.get("arch"), cores=spec.get("cores") or {"ccds": spec.get("ccds"), **spec.get("cores_per_ccd", {})},
+                  fclk_mhz=f"{fclk:.0f} (AMD's default rule, not read from the machine)" if fclk else None,
+                  mem=f"{t.upper()}-{mts}", channels=channels,
                   cl=cl, density_gbit=spd.get("density_gbit"), channels_from="locators" if chans else "DIMM count")
     return m, groups, params, None
 

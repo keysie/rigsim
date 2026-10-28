@@ -105,7 +105,7 @@ def test_cpu_memory_reasons(tmp_path):
     run = cpu_run(tmp_path)
     (run / "inventory" / "dmidecode.txt").write_text("")
     assert "no DIMM data" in P.cpu_memory_machine(run)[3]
-    run2 = cpu_run(tmp_path / "b", cpu="AMD Ryzen 5 3600 6-Core Processor")
+    run2 = cpu_run(tmp_path / "b", cpu="AMD Ryzen Threadripper 3970X 32-Core Processor")
     assert "CPU not in rigsim's catalogue" in P.cpu_memory_machine(run2)[3]
     one = cpu_run(tmp_path / "c", ndimm=1)
     assert P.cpu_memory_machine(one)[2]["channels"] == 1
@@ -120,3 +120,43 @@ def test_channel_names_boards_use(tmp_path):
             "Bank Locator: Controller0-ChannelB", "Bank Locator: BANK 0").replace("DIMM 0", a).replace("DIMM 1", b)
         (run / "inventory" / "dmidecode.txt").write_text(t)
         assert P.cpu_memory_machine(run)[2]["channels_from"] == "locators"
+
+
+def amd_run(tmp_path, cpu, cores=12, l3=4, threads=2, mem="DDR4", mts=3200):
+    run = cpu_run(tmp_path, cpu=cpu, mem=mem, mts=mts)
+    rows = ["CPU NODE SOCKET CORE L1d:L1i:L2:L3 ONLINE MAXMHZ MINMHZ MHZ"]
+    n = 0
+    for core in range(cores):
+        for _ in range(threads):
+            rows.append(f"{n} 0 0 {core} {core}:{core}:{core}:{core * l3 // cores} yes 4600.0 2200.0 2200.0"); n += 1
+    (run / "inventory" / "lscpu-e.txt").write_text("\n".join(rows) + "\n")
+    (run / "inventory" / "spd-0-0050.hex").unlink()
+    return run
+
+
+def test_ryzen_families():
+    from app.hw import amd_client as A
+    fam = lambda c: A.family(c)
+    assert fam("AMD Ryzen 7 1800X Eight-Core Processor") == "summitridge"
+    assert fam("AMD Ryzen 5 2400G with Radeon Vega Graphics") == "ravenridge"
+    assert fam("AMD Ryzen 9 3900X 12-Core Processor") == "matisse" and fam("AMD Ryzen 5 3400G with Radeon Vega Graphics") == "picasso"
+    assert fam("AMD Ryzen 7 5700 8-Core Processor") == "cezanne" and fam("AMD Ryzen 7 5700X 8-Core Processor") == "vermeer"
+    assert fam("AMD Ryzen 9 7950X 16-Core Processor") == "raphael"
+    assert fam("AMD Ryzen 7 5800H with Radeon Graphics") is None and fam("AMD Ryzen Threadripper 3970X") is None
+    assert A.fclk_mhz("matisse", 3200) == 1600 and A.fclk_mhz("vermeer", 4000) == 1800
+    assert A.fclk_mhz("raphael", 5200) == 1733 and A.fclk_mhz("raphael", 6000) == 2000 and A.fclk_mhz("cezanne", 3200) is None
+    s = A.spec("AMD Ryzen 9 3900X 12-Core Processor", 12, 4)                    # Zen 2: two core complexes per CCD
+    assert s["ccds"] == 2 and s["cores_per_ccd"] == {"zen2": 6}
+    assert A.spec("AMD Ryzen 9 5950X 16-Core Processor", 16, 2)["ccds"] == 2       # Zen 3: one per CCD
+    assert A.spec("AMD Ryzen 7 5800X 8-Core Processor", 8, 1)["ccds"] == 1
+
+
+def test_ryzen_predictions(tmp_path):
+    run = amd_run(tmp_path, "AMD Ryzen 9 3900X 12-Core Processor")
+    assert P.lscpu_topology(run) == dict(cores=12, l3_slices=4)
+    m, groups, params, why = P.cpu_memory_machine(run)
+    assert why is None and params["fclk_mhz"].startswith("1600") and params["cores"]["ccds"] == 2
+    preds, _ = P.predict(run, [dict(key="mlc/max_bandwidth/all_reads", value=40.0, unit="GB/s")])
+    assert 30 < preds[0]["value"] < 51.2                                             # below 2 x 25.6 GB/s peak
+    apu = amd_run(tmp_path / "apu", "AMD Ryzen 5 5600G with Radeon Graphics", cores=6, l3=1)
+    assert P.cpu_memory_machine(apu)[2]["cpu"] == "cezanne" and P.cpu_memory_machine(apu)[2]["fclk_mhz"] is None
