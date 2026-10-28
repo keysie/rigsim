@@ -37,7 +37,7 @@ def test_predictions_and_reasons(tmp_path):
     assert 100 < by["llama-bench/cuda/gpu0/llama-2-7b-q4_0/tg128"]["value"] < 200
     assert 600 < by["gpu-vram/gpu0/read"]["value"] < 800 and all(p["calibration"] is False for p in preds)
     reasons = {u["key"]: u["reason"] for u in unsup}
-    assert "vulkan backend not modelled" in reasons["llama-bench/vulkan/dev0/llama-2-7b-q4_0/tg128"]
+    assert "not a catalogued NVIDIA GPU" in reasons["llama-bench/vulkan/dev0/llama-2-7b-q4_0/tg128"]
     assert "model architecture not described" in reasons["llama-bench/cuda/gpu0/mistral-7b-q4_0/tg128"]
     assert "CPU not in rigsim's catalogue" in reasons["mlc/idle_latency"]
 
