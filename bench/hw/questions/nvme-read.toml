@@ -1,0 +1,24 @@
+question = "nvme-read"
+asks = """What sequential read bandwidth and what random access time does the models disk deliver?"""
+feeds = """Storage(bandwidth, access time) for SSDs (expert or model streaming from disk)."""
+method = """fio with direct I/O on a test file in a temporary directory on that disk (config testdir_parent),
+created for the run and removed after it; JSON output."""
+image = "debian:trixie"
+toolkit = "cpu"
+gpus = "none"
+exclusive = true
+testdir = true
+repeats = 3
+timeout_s = 300
+
+[grid]
+mode = ["seqread_1m_qd32", "randread_4k_qd1", "randread_4k_qd32"]
+
+[args]
+size = "8G"
+runtime = 30
+cmd = ["cpuprobe", "fio", "--mode", "{mode}", "--size", "{size}", "--runtime", "{runtime}"]
+
+[smoke]
+grid = { mode = ["randread_4k_qd1"] }
+args = { size = "1G", runtime = 5 }

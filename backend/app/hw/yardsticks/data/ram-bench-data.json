@@ -1,0 +1,5657 @@
+{
+ "schema_version": 1,
+ "title": "RAM benchmark data with stated clocks and timings",
+ "compiled": "2026-10-27",
+ "conventions": {
+  "field": "every config field is {value, basis[, note]}; basis ∈ stated | inferred | not_stated. 'stated' = printed by the source; 'inferred' = derived by the compiler (note says how).",
+  "measurement": "{metric, value, unit, basis, spread[, relative_to][, note]}; spread is null when the source gives none, else {type, ...}: stdev_pct, or range_across_dual_channel_configs {min,max} (value then null).",
+  "relative": "metrics ending in _rel are percent differences vs the entry named in relative_to.",
+  "uclk_to_mclk": "1.0 = UCLK=MCLK (1:1), 0.5 = UCLK=MCLK/2.",
+  "units": "bandwidth kept in the unit the source used (MB/s or GB/s); latency in ns. Theoretical peak is not stored: compute channels x mt_s x 8 B.",
+  "quality_flags": "free-form tags (single_run, windows, partial, anecdotal, primaries_missing, ...).",
+  "sequence": "entries sharing sequence.group are one system changed step by step; changed_from_previous names the change."
+ },
+ "sources": [
+  {
+   "id": "ocinside-oc-guide",
+   "site": "ocinside.de",
+   "author": null,
+   "date": null,
+   "date_note": "2025/2026, exact date not retrieved",
+   "title": "AMD Ryzen 7000/9000 DDR5 RAM OC Guide (pages 2–4)",
+   "url": "https://www.ocinside.de/workshop_en/amd_ryzen_7000_9000_ddr5_oc_guide/4/"
+  },
+  {
+   "id": "ocinside-crucial-6400",
+   "site": "ocinside.de",
+   "author": null,
+   "date": "2025",
+   "title": "Crucial Pro Overclocking 64GB DDR5 2x 32GB DDR5-6400 RAM Review, page 5",
+   "url": "https://www.ocinside.de/review/crucial_pro_overclocking_2x32gb_ddr5_6400/5/"
+  },
+  {
+   "id": "tpu-9800x3d-scaling",
+   "site": "TechPowerUp",
+   "author": "ir_cow",
+   "date": "2026-09-21",
+   "title": "AMD Ryzen 7 9800X3D Memory Performance Scaling",
+   "url": "https://www.techpowerup.com/review/amd-3d-v-cache-memory-performance-scaling/3.html"
+  },
+  {
+   "id": "pcunboxing-dual-platform",
+   "site": "PC Unboxing",
+   "author": "Yun",
+   "date": "2025-08-05",
+   "title": "Intel & AMD Dual-Platform DDR5 Memory Performance Measurements",
+   "url": "https://pcunboxing.com/en/ddr5-2/"
+  },
+  {
+   "id": "hwluxx-tcreate",
+   "site": "Hardwareluxx",
+   "author": "Andreas Schilling",
+   "date": "2025-07-11",
+   "title": "6.000 und 7.200 MT/s: Teamgroup T-Create mit XMP- und EXPO-Profil im Test",
+   "url": "https://www.hardwareluxx.de/index.php/artikel/hardware/arbeitsspeicher/66522-6-000-und-7-200-mt-s-teamgroup-t-create-mit-xmp-und-expo-profil-im-test.html"
+  },
+  {
+   "id": "igorslab-265k-ngu-d2d",
+   "site": "igor'sLAB",
+   "author": null,
+   "date": "2026",
+   "data_origin": "reader-submitted",
+   "title": "Intel is turning the wrong clock: Core Ultra 7 265K, NGU vs D2D",
+   "url": "https://www.igorslab.de/en/intel-wrong-clock-core-ultra-7-265k-arrow-lake-ngu-d2d/"
+  },
+  {
+   "id": "binarytides-mlc",
+   "site": "BinaryTides",
+   "author": "Silver Moon",
+   "date": "2023-06-01",
+   "title": "Benchmark RAM speed with Intel MLC",
+   "url": "https://www.binarytides.com/benchmark-ram-speed-with-intel-mlc/"
+  },
+  {
+   "id": "curiouscoding-ddr",
+   "site": "CuriousCoding",
+   "author": "Ragnar Groot Koerkamp",
+   "date": "2026-01",
+   "title": "Trying to understand DDR memory",
+   "url": "https://curiouscoding.nl/posts/ddr/"
+  },
+  {
+   "id": "fpsreview-ballistix-3600",
+   "site": "The FPS Review",
+   "author": "Brent Justice",
+   "date": "2021-10-28",
+   "title": "Crucial Ballistix DDR4-3600 CL16 16GB RAM Kit Review, page 3",
+   "url": "https://www.thefpsreview.com/2021/10/28/crucial-ballistix-ddr4-3600-cl16-16gb-ram-kit-review/3/"
+  },
+  {
+   "id": "whirlpool-aida-thread",
+   "site": "Whirlpool forums",
+   "author": null,
+   "date": null,
+   "title": "Post your AIDA 64 cache and memory (user post)",
+   "url": "https://forums.whirlpool.net.au/archive/9rvjplzk"
+  }
+ ],
+ "entries": [
+  {
+   "id": "ocg-01",
+   "source_id": "ocinside-oc-guide",
+   "sequence": {
+    "group": "ocg",
+    "step": 1,
+    "changed_from_previous": "AUTO (JEDEC)"
+   },
+   "system": {
+    "cpu": {
+     "value": "Ryzen 7 7800X3D",
+     "basis": "stated"
+    },
+    "board": {
+     "value": "ASRock B850 Steel Legend WiFi",
+     "basis": "stated"
+    },
+    "bios": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "os": {
+     "value": "Windows",
+     "basis": "inferred",
+     "note": "guide recommends a separate Windows install; version not given"
+    }
+   },
+   "memory": {
+    "type": {
+     "value": "DDR5",
+     "basis": "stated"
+    },
+    "mt_s": {
+     "value": 5200,
+     "basis": "stated"
+    },
+    "dimms": {
+     "value": 2,
+     "basis": "stated"
+    },
+    "channels": {
+     "value": 2,
+     "basis": "stated"
+    },
+    "gb_per_dimm": {
+     "value": 32,
+     "basis": "stated"
+    },
+    "ranks": {
+     "value": 1,
+     "basis": "stated"
+    },
+    "ic": {
+     "value": "Micron 32 Gbit",
+     "basis": "stated"
+    },
+    "kit_part": {
+     "value": "CP2K32G64C40U5B",
+     "basis": "stated"
+    }
+   },
+   "timings": {
+    "tCL": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "JEDEC auto; not printed in text"
+    },
+    "tRCD": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "JEDEC auto; not printed in text"
+    },
+    "tRP": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "JEDEC auto; not printed in text"
+    },
+    "tRAS": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "JEDEC auto; not printed in text"
+    },
+    "profile": {
+     "value": "AUTO (JEDEC)",
+     "basis": "stated"
+    }
+   },
+   "clocks": {
+    "fclk_mhz": {
+     "value": 1733,
+     "basis": "stated"
+    },
+    "uclk_to_mclk": {
+     "value": 1.0,
+     "basis": "stated"
+    }
+   },
+   "tool": {
+    "name": {
+     "value": "AIDA64 Engineer Cache & Memory Benchmark",
+     "basis": "stated"
+    },
+    "version": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "statistic": {
+     "value": "average",
+     "basis": "stated"
+    },
+    "runs": {
+     "value": null,
+     "basis": "not_stated"
+    }
+   },
+   "measurements": [
+    {
+     "metric": "read_bw",
+     "value": 49430,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "write_bw",
+     "value": 65820,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "copy_bw",
+     "value": 49500,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "latency_idle",
+     "value": 93.6,
+     "unit": "ns",
+     "basis": "stated",
+     "spread": null
+    }
+   ],
+   "quality": [
+    "single_platform_sequence",
+    "repeats_not_stated",
+    "windows"
+   ]
+  },
+  {
+   "id": "ocg-02",
+   "source_id": "ocinside-oc-guide",
+   "sequence": {
+    "group": "ocg",
+    "step": 2,
+    "changed_from_previous": "EXPO-6400"
+   },
+   "system": {
+    "cpu": {
+     "value": "Ryzen 7 7800X3D",
+     "basis": "stated"
+    },
+    "board": {
+     "value": "ASRock B850 Steel Legend WiFi",
+     "basis": "stated"
+    },
+    "bios": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "os": {
+     "value": "Windows",
+     "basis": "inferred",
+     "note": "guide recommends a separate Windows install; version not given"
+    }
+   },
+   "memory": {
+    "type": {
+     "value": "DDR5",
+     "basis": "stated"
+    },
+    "mt_s": {
+     "value": 6400,
+     "basis": "stated"
+    },
+    "dimms": {
+     "value": 2,
+     "basis": "stated"
+    },
+    "channels": {
+     "value": 2,
+     "basis": "stated"
+    },
+    "gb_per_dimm": {
+     "value": 32,
+     "basis": "stated"
+    },
+    "ranks": {
+     "value": 1,
+     "basis": "stated"
+    },
+    "ic": {
+     "value": "Micron 32 Gbit",
+     "basis": "stated"
+    },
+    "kit_part": {
+     "value": "CP2K32G64C40U5B",
+     "basis": "stated"
+    }
+   },
+   "timings": {
+    "tCL": {
+     "value": 40,
+     "basis": "inferred",
+     "note": "kit's EXPO-6400 primaries from the same site's kit review"
+    },
+    "tRCD": {
+     "value": 40,
+     "basis": "inferred",
+     "note": "kit's EXPO-6400 primaries from the same site's kit review"
+    },
+    "tRP": {
+     "value": 40,
+     "basis": "inferred",
+     "note": "kit's EXPO-6400 primaries from the same site's kit review"
+    },
+    "tRAS": {
+     "value": 85,
+     "basis": "inferred",
+     "note": "kit's EXPO-6400 primaries from the same site's kit review"
+    },
+    "profile": {
+     "value": "EXPO-6400",
+     "basis": "stated"
+    }
+   },
+   "clocks": {
+    "fclk_mhz": {
+     "value": 2000,
+     "basis": "stated"
+    },
+    "uclk_to_mclk": {
+     "value": 0.5,
+     "basis": "stated"
+    },
+    "mclk_mhz": {
+     "value": 3200,
+     "basis": "stated"
+    },
+    "uclk_mhz": {
+     "value": 1600,
+     "basis": "stated"
+    }
+   },
+   "tool": {
+    "name": {
+     "value": "AIDA64 Engineer Cache & Memory Benchmark",
+     "basis": "stated"
+    },
+    "version": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "statistic": {
+     "value": "average",
+     "basis": "stated"
+    },
+    "runs": {
+     "value": null,
+     "basis": "not_stated"
+    }
+   },
+   "measurements": [
+    {
+     "metric": "read_bw",
+     "value": 57100,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "write_bw",
+     "value": 79690,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "copy_bw",
+     "value": 57170,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "latency_idle",
+     "value": 82.5,
+     "unit": "ns",
+     "basis": "stated",
+     "spread": null
+    }
+   ],
+   "quality": [
+    "single_platform_sequence",
+    "repeats_not_stated",
+    "windows"
+   ]
+  },
+  {
+   "id": "ocg-03",
+   "source_id": "ocinside-oc-guide",
+   "sequence": {
+    "group": "ocg",
+    "step": 3,
+    "changed_from_previous": "EXPO-6400 + FCLK"
+   },
+   "system": {
+    "cpu": {
+     "value": "Ryzen 7 7800X3D",
+     "basis": "stated"
+    },
+    "board": {
+     "value": "ASRock B850 Steel Legend WiFi",
+     "basis": "stated"
+    },
+    "bios": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "os": {
+     "value": "Windows",
+     "basis": "inferred",
+     "note": "guide recommends a separate Windows install; version not given"
+    }
+   },
+   "memory": {
+    "type": {
+     "value": "DDR5",
+     "basis": "stated"
+    },
+    "mt_s": {
+     "value": 6400,
+     "basis": "stated"
+    },
+    "dimms": {
+     "value": 2,
+     "basis": "stated"
+    },
+    "channels": {
+     "value": 2,
+     "basis": "stated"
+    },
+    "gb_per_dimm": {
+     "value": 32,
+     "basis": "stated"
+    },
+    "ranks": {
+     "value": 1,
+     "basis": "stated"
+    },
+    "ic": {
+     "value": "Micron 32 Gbit",
+     "basis": "stated"
+    },
+    "kit_part": {
+     "value": "CP2K32G64C40U5B",
+     "basis": "stated"
+    }
+   },
+   "timings": {
+    "tCL": {
+     "value": 40,
+     "basis": "inferred",
+     "note": "kit's EXPO-6400 primaries from the same site's kit review"
+    },
+    "tRCD": {
+     "value": 40,
+     "basis": "inferred",
+     "note": "kit's EXPO-6400 primaries from the same site's kit review"
+    },
+    "tRP": {
+     "value": 40,
+     "basis": "inferred",
+     "note": "kit's EXPO-6400 primaries from the same site's kit review"
+    },
+    "tRAS": {
+     "value": 85,
+     "basis": "inferred",
+     "note": "kit's EXPO-6400 primaries from the same site's kit review"
+    },
+    "profile": {
+     "value": "EXPO-6400 + FCLK",
+     "basis": "stated"
+    }
+   },
+   "clocks": {
+    "fclk_mhz": {
+     "value": 2167,
+     "basis": "stated"
+    },
+    "uclk_to_mclk": {
+     "value": 0.5,
+     "basis": "stated"
+    },
+    "vsoc_v": {
+     "value": 1.3,
+     "basis": "stated"
+    }
+   },
+   "tool": {
+    "name": {
+     "value": "AIDA64 Engineer Cache & Memory Benchmark",
+     "basis": "stated"
+    },
+    "version": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "statistic": {
+     "value": "average",
+     "basis": "stated"
+    },
+    "runs": {
+     "value": null,
+     "basis": "not_stated"
+    }
+   },
+   "measurements": [
+    {
+     "metric": "read_bw",
+     "value": 61700,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "write_bw",
+     "value": 79510,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "copy_bw",
+     "value": 61390,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "latency_idle",
+     "value": 81.5,
+     "unit": "ns",
+     "basis": "stated",
+     "spread": null
+    }
+   ],
+   "quality": [
+    "single_platform_sequence",
+    "repeats_not_stated",
+    "windows"
+   ]
+  },
+  {
+   "id": "ocg-04",
+   "source_id": "ocinside-oc-guide",
+   "sequence": {
+    "group": "ocg",
+    "step": 4,
+    "changed_from_previous": "6200 1:1"
+   },
+   "system": {
+    "cpu": {
+     "value": "Ryzen 7 7800X3D",
+     "basis": "stated"
+    },
+    "board": {
+     "value": "ASRock B850 Steel Legend WiFi",
+     "basis": "stated"
+    },
+    "bios": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "os": {
+     "value": "Windows",
+     "basis": "inferred",
+     "note": "guide recommends a separate Windows install; version not given"
+    }
+   },
+   "memory": {
+    "type": {
+     "value": "DDR5",
+     "basis": "stated"
+    },
+    "mt_s": {
+     "value": 6200,
+     "basis": "stated"
+    },
+    "dimms": {
+     "value": 2,
+     "basis": "stated"
+    },
+    "channels": {
+     "value": 2,
+     "basis": "stated"
+    },
+    "gb_per_dimm": {
+     "value": 32,
+     "basis": "stated"
+    },
+    "ranks": {
+     "value": 1,
+     "basis": "stated"
+    },
+    "ic": {
+     "value": "Micron 32 Gbit",
+     "basis": "stated"
+    },
+    "kit_part": {
+     "value": "CP2K32G64C40U5B",
+     "basis": "stated"
+    }
+   },
+   "timings": {
+    "tCL": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "screenshot only (image_only)"
+    },
+    "tRCD": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "screenshot only (image_only)"
+    },
+    "tRP": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "screenshot only (image_only)"
+    },
+    "tRAS": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "screenshot only (image_only)"
+    },
+    "tREFI": {
+     "value": 10126,
+     "basis": "stated",
+     "note": "cycles, 3895 ns"
+    },
+    "tWR": {
+     "value": 96,
+     "basis": "stated"
+    },
+    "profile": {
+     "value": "6200 1:1",
+     "basis": "stated"
+    }
+   },
+   "clocks": {
+    "fclk_mhz": {
+     "value": 2167,
+     "basis": "stated"
+    },
+    "uclk_to_mclk": {
+     "value": 1.0,
+     "basis": "stated"
+    },
+    "vsoc_v": {
+     "value": 1.3,
+     "basis": "stated"
+    }
+   },
+   "tool": {
+    "name": {
+     "value": "AIDA64 Engineer Cache & Memory Benchmark",
+     "basis": "stated"
+    },
+    "version": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "statistic": {
+     "value": "average",
+     "basis": "stated"
+    },
+    "runs": {
+     "value": null,
+     "basis": "not_stated"
+    }
+   },
+   "measurements": [
+    {
+     "metric": "read_bw",
+     "value": 61480,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "write_bw",
+     "value": 78720,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "copy_bw",
+     "value": 61430,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "latency_idle",
+     "value": 79.5,
+     "unit": "ns",
+     "basis": "stated",
+     "spread": null
+    }
+   ],
+   "quality": [
+    "single_platform_sequence",
+    "repeats_not_stated",
+    "windows"
+   ]
+  },
+  {
+   "id": "ocg-05",
+   "source_id": "ocinside-oc-guide",
+   "sequence": {
+    "group": "ocg",
+    "step": 5,
+    "changed_from_previous": "+ tREFI"
+   },
+   "system": {
+    "cpu": {
+     "value": "Ryzen 7 7800X3D",
+     "basis": "stated"
+    },
+    "board": {
+     "value": "ASRock B850 Steel Legend WiFi",
+     "basis": "stated"
+    },
+    "bios": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "os": {
+     "value": "Windows",
+     "basis": "inferred",
+     "note": "guide recommends a separate Windows install; version not given"
+    }
+   },
+   "memory": {
+    "type": {
+     "value": "DDR5",
+     "basis": "stated"
+    },
+    "mt_s": {
+     "value": 6200,
+     "basis": "stated"
+    },
+    "dimms": {
+     "value": 2,
+     "basis": "stated"
+    },
+    "channels": {
+     "value": 2,
+     "basis": "stated"
+    },
+    "gb_per_dimm": {
+     "value": 32,
+     "basis": "stated"
+    },
+    "ranks": {
+     "value": 1,
+     "basis": "stated"
+    },
+    "ic": {
+     "value": "Micron 32 Gbit",
+     "basis": "stated"
+    },
+    "kit_part": {
+     "value": "CP2K32G64C40U5B",
+     "basis": "stated"
+    }
+   },
+   "timings": {
+    "tCL": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "screenshot only (image_only)"
+    },
+    "tRCD": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "screenshot only (image_only)"
+    },
+    "tRP": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "screenshot only (image_only)"
+    },
+    "tRAS": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "screenshot only (image_only)"
+    },
+    "tREFI": {
+     "value": 62000,
+     "basis": "stated",
+     "note": "cycles"
+    },
+    "tWR": {
+     "value": 96,
+     "basis": "stated"
+    },
+    "profile": {
+     "value": "+ tREFI",
+     "basis": "stated"
+    }
+   },
+   "clocks": {
+    "fclk_mhz": {
+     "value": 2167,
+     "basis": "stated"
+    },
+    "uclk_to_mclk": {
+     "value": 1.0,
+     "basis": "stated"
+    },
+    "vsoc_v": {
+     "value": 1.3,
+     "basis": "stated"
+    }
+   },
+   "tool": {
+    "name": {
+     "value": "AIDA64 Engineer Cache & Memory Benchmark",
+     "basis": "stated"
+    },
+    "version": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "statistic": {
+     "value": "average",
+     "basis": "stated"
+    },
+    "runs": {
+     "value": null,
+     "basis": "not_stated"
+    }
+   },
+   "measurements": [
+    {
+     "metric": "read_bw",
+     "value": 67540,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "write_bw",
+     "value": 87060,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "copy_bw",
+     "value": 67240,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "latency_idle",
+     "value": 68.0,
+     "unit": "ns",
+     "basis": "stated",
+     "spread": null
+    }
+   ],
+   "quality": [
+    "single_platform_sequence",
+    "repeats_not_stated",
+    "windows"
+   ]
+  },
+  {
+   "id": "ocg-06",
+   "source_id": "ocinside-oc-guide",
+   "sequence": {
+    "group": "ocg",
+    "step": 6,
+    "changed_from_previous": "+ tWR"
+   },
+   "system": {
+    "cpu": {
+     "value": "Ryzen 7 7800X3D",
+     "basis": "stated"
+    },
+    "board": {
+     "value": "ASRock B850 Steel Legend WiFi",
+     "basis": "stated"
+    },
+    "bios": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "os": {
+     "value": "Windows",
+     "basis": "inferred",
+     "note": "guide recommends a separate Windows install; version not given"
+    }
+   },
+   "memory": {
+    "type": {
+     "value": "DDR5",
+     "basis": "stated"
+    },
+    "mt_s": {
+     "value": 6200,
+     "basis": "stated"
+    },
+    "dimms": {
+     "value": 2,
+     "basis": "stated"
+    },
+    "channels": {
+     "value": 2,
+     "basis": "stated"
+    },
+    "gb_per_dimm": {
+     "value": 32,
+     "basis": "stated"
+    },
+    "ranks": {
+     "value": 1,
+     "basis": "stated"
+    },
+    "ic": {
+     "value": "Micron 32 Gbit",
+     "basis": "stated"
+    },
+    "kit_part": {
+     "value": "CP2K32G64C40U5B",
+     "basis": "stated"
+    }
+   },
+   "timings": {
+    "tCL": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "screenshot only (image_only)"
+    },
+    "tRCD": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "screenshot only (image_only)"
+    },
+    "tRP": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "screenshot only (image_only)"
+    },
+    "tRAS": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "screenshot only (image_only)"
+    },
+    "tREFI": {
+     "value": 62000,
+     "basis": "stated"
+    },
+    "tWR": {
+     "value": 48,
+     "basis": "stated"
+    },
+    "profile": {
+     "value": "+ tWR",
+     "basis": "stated"
+    }
+   },
+   "clocks": {
+    "fclk_mhz": {
+     "value": 2167,
+     "basis": "stated"
+    },
+    "uclk_to_mclk": {
+     "value": 1.0,
+     "basis": "stated"
+    },
+    "vsoc_v": {
+     "value": 1.3,
+     "basis": "stated"
+    }
+   },
+   "tool": {
+    "name": {
+     "value": "AIDA64 Engineer Cache & Memory Benchmark",
+     "basis": "stated"
+    },
+    "version": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "statistic": {
+     "value": "average",
+     "basis": "stated"
+    },
+    "runs": {
+     "value": null,
+     "basis": "not_stated"
+    }
+   },
+   "measurements": [
+    {
+     "metric": "read_bw",
+     "value": 67520,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "write_bw",
+     "value": 90790,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "copy_bw",
+     "value": 67420,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "latency_idle",
+     "value": 68.0,
+     "unit": "ns",
+     "basis": "stated",
+     "spread": null
+    }
+   ],
+   "quality": [
+    "single_platform_sequence",
+    "repeats_not_stated",
+    "windows"
+   ]
+  },
+  {
+   "id": "ocg-07",
+   "source_id": "ocinside-oc-guide",
+   "sequence": {
+    "group": "ocg",
+    "step": 7,
+    "changed_from_previous": "max tune (15 iterations)"
+   },
+   "system": {
+    "cpu": {
+     "value": "Ryzen 7 7800X3D",
+     "basis": "stated"
+    },
+    "board": {
+     "value": "ASRock B850 Steel Legend WiFi",
+     "basis": "stated"
+    },
+    "bios": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "os": {
+     "value": "Windows",
+     "basis": "inferred",
+     "note": "guide recommends a separate Windows install; version not given"
+    }
+   },
+   "memory": {
+    "type": {
+     "value": "DDR5",
+     "basis": "stated"
+    },
+    "mt_s": {
+     "value": 6200,
+     "basis": "stated"
+    },
+    "dimms": {
+     "value": 2,
+     "basis": "stated"
+    },
+    "channels": {
+     "value": 2,
+     "basis": "stated"
+    },
+    "gb_per_dimm": {
+     "value": 32,
+     "basis": "stated"
+    },
+    "ranks": {
+     "value": 1,
+     "basis": "stated"
+    },
+    "ic": {
+     "value": "Micron 32 Gbit",
+     "basis": "stated"
+    },
+    "kit_part": {
+     "value": "CP2K32G64C40U5B",
+     "basis": "stated"
+    }
+   },
+   "timings": {
+    "tCL": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "screenshot only (image_only)"
+    },
+    "tRCD": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "screenshot only (image_only)"
+    },
+    "tRP": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "screenshot only (image_only)"
+    },
+    "tRAS": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "screenshot only (image_only)"
+    },
+    "tREFI": {
+     "value": 62000,
+     "basis": "stated"
+    },
+    "profile": {
+     "value": "max tune (15 iterations)",
+     "basis": "stated"
+    }
+   },
+   "clocks": {
+    "fclk_mhz": {
+     "value": 2167,
+     "basis": "stated"
+    },
+    "uclk_to_mclk": {
+     "value": 1.0,
+     "basis": "stated"
+    },
+    "vsoc_v": {
+     "value": 1.3,
+     "basis": "stated"
+    }
+   },
+   "tool": {
+    "name": {
+     "value": "AIDA64 Engineer Cache & Memory Benchmark",
+     "basis": "stated"
+    },
+    "version": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "statistic": {
+     "value": "average",
+     "basis": "stated"
+    },
+    "runs": {
+     "value": null,
+     "basis": "not_stated"
+    }
+   },
+   "measurements": [
+    {
+     "metric": "read_bw",
+     "value": 67720,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "write_bw",
+     "value": 91090,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "copy_bw",
+     "value": 67720,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "latency_idle",
+     "value": 67.2,
+     "unit": "ns",
+     "basis": "stated",
+     "spread": null
+    }
+   ],
+   "quality": [
+    "single_platform_sequence",
+    "repeats_not_stated",
+    "windows"
+   ]
+  },
+  {
+   "id": "occ-01",
+   "source_id": "ocinside-crucial-6400",
+   "system": {
+    "cpu": {
+     "value": "Ryzen 7 9800X3D",
+     "basis": "stated",
+     "note": "stock"
+    },
+    "board": {
+     "value": "ASRock B850 Steel Legend WiFi",
+     "basis": "stated"
+    },
+    "bios": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "os": {
+     "value": "Windows",
+     "basis": "inferred"
+    }
+   },
+   "memory": {
+    "type": {
+     "value": "DDR5",
+     "basis": "stated"
+    },
+    "mt_s": {
+     "value": 5600,
+     "basis": "stated"
+    },
+    "dimms": {
+     "value": 2,
+     "basis": "stated"
+    },
+    "channels": {
+     "value": 2,
+     "basis": "stated"
+    },
+    "gb_per_dimm": {
+     "value": 32,
+     "basis": "stated"
+    },
+    "ranks": {
+     "value": 1,
+     "basis": "stated"
+    },
+    "ic": {
+     "value": "Micron 32 Gbit",
+     "basis": "stated"
+    },
+    "vdimm_v": {
+     "value": 1.1,
+     "basis": "stated"
+    }
+   },
+   "timings": {
+    "tCL": {
+     "value": 46,
+     "basis": "stated"
+    },
+    "tRCD": {
+     "value": 45,
+     "basis": "stated"
+    },
+    "tRP": {
+     "value": 45,
+     "basis": "stated"
+    },
+    "tRAS": {
+     "value": 90,
+     "basis": "stated"
+    },
+    "profile": {
+     "value": "JEDEC",
+     "basis": "stated"
+    }
+   },
+   "clocks": {
+    "fclk_mhz": {
+     "value": 2000,
+     "basis": "stated"
+    },
+    "uclk_to_mclk": {
+     "value": 1.0,
+     "basis": "stated",
+     "note": "UCLK auto"
+    }
+   },
+   "tool": {
+    "name": {
+     "value": "AIDA64 Cache & Memory Benchmark",
+     "basis": "stated"
+    },
+    "version": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "statistic": {
+     "value": "average",
+     "basis": "stated"
+    },
+    "runs": {
+     "value": null,
+     "basis": "not_stated"
+    }
+   },
+   "measurements": [
+    {
+     "metric": "read_bw",
+     "value": 56130,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "write_bw",
+     "value": 68890,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "latency_idle",
+     "value": 98.5,
+     "unit": "ns",
+     "basis": "stated",
+     "spread": null
+    }
+   ],
+   "notes": [],
+   "quality": [
+    "repeats_not_stated",
+    "windows"
+   ]
+  },
+  {
+   "id": "occ-02",
+   "source_id": "ocinside-crucial-6400",
+   "system": {
+    "cpu": {
+     "value": "Ryzen 7 9800X3D",
+     "basis": "stated",
+     "note": "stock"
+    },
+    "board": {
+     "value": "ASRock B850 Steel Legend WiFi",
+     "basis": "stated"
+    },
+    "bios": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "os": {
+     "value": "Windows",
+     "basis": "inferred"
+    }
+   },
+   "memory": {
+    "type": {
+     "value": "DDR5",
+     "basis": "stated"
+    },
+    "mt_s": {
+     "value": 6000,
+     "basis": "stated"
+    },
+    "dimms": {
+     "value": 2,
+     "basis": "stated"
+    },
+    "channels": {
+     "value": 2,
+     "basis": "stated"
+    },
+    "gb_per_dimm": {
+     "value": 32,
+     "basis": "stated"
+    },
+    "ranks": {
+     "value": 1,
+     "basis": "stated"
+    },
+    "ic": {
+     "value": "Micron 32 Gbit",
+     "basis": "stated"
+    },
+    "vdimm_v": {
+     "value": 1.35,
+     "basis": "stated"
+    }
+   },
+   "timings": {
+    "tCL": {
+     "value": 40,
+     "basis": "stated"
+    },
+    "tRCD": {
+     "value": 40,
+     "basis": "stated"
+    },
+    "tRP": {
+     "value": 40,
+     "basis": "stated"
+    },
+    "tRAS": {
+     "value": 80,
+     "basis": "stated"
+    },
+    "profile": {
+     "value": "EXPO-6000",
+     "basis": "stated"
+    }
+   },
+   "clocks": {
+    "fclk_mhz": {
+     "value": 2000,
+     "basis": "stated"
+    },
+    "uclk_to_mclk": {
+     "value": 1.0,
+     "basis": "stated",
+     "note": "UCLK auto"
+    }
+   },
+   "tool": {
+    "name": {
+     "value": "AIDA64 Cache & Memory Benchmark",
+     "basis": "stated"
+    },
+    "version": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "statistic": {
+     "value": "average",
+     "basis": "stated"
+    },
+    "runs": {
+     "value": null,
+     "basis": "not_stated"
+    }
+   },
+   "measurements": [
+    {
+     "metric": "read_bw",
+     "value": 56900,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "write_bw",
+     "value": 74350,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "latency_idle",
+     "value": 90.0,
+     "unit": "ns",
+     "basis": "stated",
+     "spread": null
+    }
+   ],
+   "notes": [],
+   "quality": [
+    "repeats_not_stated",
+    "windows"
+   ]
+  },
+  {
+   "id": "occ-03",
+   "source_id": "ocinside-crucial-6400",
+   "system": {
+    "cpu": {
+     "value": "Ryzen 7 9800X3D",
+     "basis": "stated",
+     "note": "stock"
+    },
+    "board": {
+     "value": "ASRock B850 Steel Legend WiFi",
+     "basis": "stated"
+    },
+    "bios": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "os": {
+     "value": "Windows",
+     "basis": "inferred"
+    }
+   },
+   "memory": {
+    "type": {
+     "value": "DDR5",
+     "basis": "stated"
+    },
+    "mt_s": {
+     "value": 6400,
+     "basis": "stated"
+    },
+    "dimms": {
+     "value": 2,
+     "basis": "stated"
+    },
+    "channels": {
+     "value": 2,
+     "basis": "stated"
+    },
+    "gb_per_dimm": {
+     "value": 32,
+     "basis": "stated"
+    },
+    "ranks": {
+     "value": 1,
+     "basis": "stated"
+    },
+    "ic": {
+     "value": "Micron 32 Gbit",
+     "basis": "stated"
+    },
+    "vdimm_v": {
+     "value": 1.31,
+     "basis": "stated"
+    }
+   },
+   "timings": {
+    "tCL": {
+     "value": 40,
+     "basis": "stated",
+     "note": "source also lists tRP 44 in its summary table"
+    },
+    "tRCD": {
+     "value": 40,
+     "basis": "stated",
+     "note": "source also lists tRP 44 in its summary table"
+    },
+    "tRP": {
+     "value": 40,
+     "basis": "stated",
+     "note": "source also lists tRP 44 in its summary table"
+    },
+    "tRAS": {
+     "value": 85,
+     "basis": "stated",
+     "note": "source also lists tRP 44 in its summary table"
+    },
+    "profile": {
+     "value": "EXPO-6400 (VDIMM lowered)",
+     "basis": "stated"
+    }
+   },
+   "clocks": {
+    "fclk_mhz": {
+     "value": 2000,
+     "basis": "stated"
+    },
+    "uclk_to_mclk": {
+     "value": 0.5,
+     "basis": "stated",
+     "note": "UCLK auto"
+    }
+   },
+   "tool": {
+    "name": {
+     "value": "AIDA64 Cache & Memory Benchmark",
+     "basis": "stated"
+    },
+    "version": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "statistic": {
+     "value": "average",
+     "basis": "stated"
+    },
+    "runs": {
+     "value": null,
+     "basis": "not_stated"
+    }
+   },
+   "measurements": [
+    {
+     "metric": "read_bw",
+     "value": 57020,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "write_bw",
+     "value": 78800,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "latency_idle",
+     "value": 89.6,
+     "unit": "ns",
+     "basis": "stated",
+     "spread": null
+    }
+   ],
+   "notes": [
+    "first 6400 kit unstable at EXPO voltage; run used 1.31 V"
+   ],
+   "quality": [
+    "repeats_not_stated",
+    "windows"
+   ]
+  },
+  {
+   "id": "tpu-01",
+   "source_id": "tpu-9800x3d-scaling",
+   "system": {
+    "cpu": {
+     "value": "Ryzen 7 9800X3D",
+     "basis": "stated"
+    },
+    "board": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "not retrieved"
+    },
+    "bios": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "os": {
+     "value": "Windows",
+     "basis": "inferred"
+    }
+   },
+   "memory": {
+    "type": {
+     "value": "DDR5",
+     "basis": "stated"
+    },
+    "mt_s": {
+     "value": 4800,
+     "basis": "stated"
+    },
+    "dimms": {
+     "value": 2,
+     "basis": "stated"
+    },
+    "channels": {
+     "value": 2,
+     "basis": "inferred"
+    },
+    "gb_per_dimm": {
+     "value": 16,
+     "basis": "stated"
+    },
+    "ranks": {
+     "value": 1,
+     "basis": "stated"
+    },
+    "vdimm_v": {
+     "value": 1.1,
+     "basis": "stated"
+    }
+   },
+   "timings": {
+    "tCL": {
+     "value": 40,
+     "basis": "stated"
+    },
+    "tRCD": {
+     "value": 40,
+     "basis": "stated"
+    },
+    "tRP": {
+     "value": 40,
+     "basis": "stated"
+    },
+    "tRAS": {
+     "value": 77,
+     "basis": "stated"
+    },
+    "tRC": {
+     "value": 117,
+     "basis": "stated"
+    },
+    "tRFC2": {
+     "value": 384,
+     "basis": "stated",
+     "note": "unit not stated (likely cycles)"
+    },
+    "tRFCsb": {
+     "value": 312,
+     "basis": "stated",
+     "note": "unit not stated (likely cycles)"
+    },
+    "profile": {
+     "value": "DDR5-4800 JEDEC",
+     "basis": "stated"
+    }
+   },
+   "clocks": {
+    "fclk_mhz": {
+     "value": 2000,
+     "basis": "stated"
+    },
+    "uclk_to_mclk": {
+     "value": 1.0,
+     "basis": "stated"
+    }
+   },
+   "tool": {
+    "name": {
+     "value": "AIDA64 Cache & Memory Benchmark",
+     "basis": "stated"
+    },
+    "version": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "statistic": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "runs": {
+     "value": null,
+     "basis": "not_stated"
+    }
+   },
+   "measurements": [
+    {
+     "metric": "read_bw",
+     "value": null,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": {
+      "type": "range_across_dual_channel_configs",
+      "min": 63317,
+      "max": 63929
+     },
+     "note": "only the range over all dual-channel kits is stated; per-kit value in chart"
+    },
+    {
+     "metric": "latency_idle",
+     "value": 89.9,
+     "unit": "ns",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "ycruncher_2.5b_time",
+     "value": 59.37,
+     "unit": "s",
+     "basis": "stated",
+     "spread": null
+    }
+   ],
+   "notes": [
+    "write/copy and remaining latencies exist only as chart images (not retrieved)"
+   ],
+   "quality": [
+    "single_run_likely",
+    "windows",
+    "partial"
+   ]
+  },
+  {
+   "id": "tpu-02",
+   "source_id": "tpu-9800x3d-scaling",
+   "system": {
+    "cpu": {
+     "value": "Ryzen 7 9800X3D",
+     "basis": "stated"
+    },
+    "board": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "not retrieved"
+    },
+    "bios": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "os": {
+     "value": "Windows",
+     "basis": "inferred"
+    }
+   },
+   "memory": {
+    "type": {
+     "value": "DDR5",
+     "basis": "stated"
+    },
+    "mt_s": {
+     "value": 5600,
+     "basis": "stated"
+    },
+    "dimms": {
+     "value": 2,
+     "basis": "stated"
+    },
+    "channels": {
+     "value": 2,
+     "basis": "inferred"
+    },
+    "gb_per_dimm": {
+     "value": 8,
+     "basis": "stated"
+    },
+    "ranks": {
+     "value": 1,
+     "basis": "stated"
+    },
+    "vdimm_v": {
+     "value": 1.1,
+     "basis": "stated"
+    }
+   },
+   "timings": {
+    "tCL": {
+     "value": 46,
+     "basis": "stated"
+    },
+    "tRCD": {
+     "value": 45,
+     "basis": "stated"
+    },
+    "tRP": {
+     "value": 45,
+     "basis": "stated"
+    },
+    "tRAS": {
+     "value": 90,
+     "basis": "stated"
+    },
+    "tRC": {
+     "value": 135,
+     "basis": "stated"
+    },
+    "tRFC2": {
+     "value": 448,
+     "basis": "stated",
+     "note": "unit not stated (likely cycles)"
+    },
+    "tRFCsb": {
+     "value": 364,
+     "basis": "stated",
+     "note": "unit not stated (likely cycles)"
+    },
+    "profile": {
+     "value": "DDR5-5600 JEDEC",
+     "basis": "stated"
+    }
+   },
+   "clocks": {
+    "fclk_mhz": {
+     "value": 2000,
+     "basis": "stated"
+    },
+    "uclk_to_mclk": {
+     "value": 1.0,
+     "basis": "stated"
+    }
+   },
+   "tool": {
+    "name": {
+     "value": "AIDA64 Cache & Memory Benchmark",
+     "basis": "stated"
+    },
+    "version": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "statistic": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "runs": {
+     "value": null,
+     "basis": "not_stated"
+    }
+   },
+   "measurements": [
+    {
+     "metric": "read_bw",
+     "value": null,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": {
+      "type": "range_across_dual_channel_configs",
+      "min": 63317,
+      "max": 63929
+     },
+     "note": "only the range over all dual-channel kits is stated; per-kit value in chart"
+    },
+    {
+     "metric": "latency_idle",
+     "value": 88.5,
+     "unit": "ns",
+     "basis": "inferred",
+     "spread": null,
+     "note": "mapping of value to kit inferred"
+    }
+   ],
+   "notes": [
+    "write/copy and remaining latencies exist only as chart images (not retrieved)"
+   ],
+   "quality": [
+    "single_run_likely",
+    "windows",
+    "partial"
+   ]
+  },
+  {
+   "id": "tpu-03",
+   "source_id": "tpu-9800x3d-scaling",
+   "system": {
+    "cpu": {
+     "value": "Ryzen 7 9800X3D",
+     "basis": "stated"
+    },
+    "board": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "not retrieved"
+    },
+    "bios": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "os": {
+     "value": "Windows",
+     "basis": "inferred"
+    }
+   },
+   "memory": {
+    "type": {
+     "value": "DDR5",
+     "basis": "stated"
+    },
+    "mt_s": {
+     "value": 6000,
+     "basis": "stated"
+    },
+    "dimms": {
+     "value": 2,
+     "basis": "stated"
+    },
+    "channels": {
+     "value": 2,
+     "basis": "inferred"
+    },
+    "gb_per_dimm": {
+     "value": 16,
+     "basis": "stated"
+    },
+    "ranks": {
+     "value": 1,
+     "basis": "stated"
+    },
+    "vdimm_v": {
+     "value": 1.35,
+     "basis": "stated"
+    }
+   },
+   "timings": {
+    "tCL": {
+     "value": 30,
+     "basis": "stated",
+     "note": "tRAS 32 printed as given (sic)"
+    },
+    "tRCD": {
+     "value": 38,
+     "basis": "stated",
+     "note": "tRAS 32 printed as given (sic)"
+    },
+    "tRP": {
+     "value": 38,
+     "basis": "stated",
+     "note": "tRAS 32 printed as given (sic)"
+    },
+    "tRAS": {
+     "value": 32,
+     "basis": "stated",
+     "note": "tRAS 32 printed as given (sic)"
+    },
+    "tRC": {
+     "value": 68,
+     "basis": "stated"
+    },
+    "tRFC2": {
+     "value": 402,
+     "basis": "stated",
+     "note": "unit not stated (likely cycles)"
+    },
+    "tRFCsb": {
+     "value": 300,
+     "basis": "stated",
+     "note": "unit not stated (likely cycles)"
+    },
+    "profile": {
+     "value": "DDR5-6000 ULL",
+     "basis": "stated"
+    }
+   },
+   "clocks": {
+    "fclk_mhz": {
+     "value": 2000,
+     "basis": "stated"
+    },
+    "uclk_to_mclk": {
+     "value": 1.0,
+     "basis": "stated"
+    }
+   },
+   "tool": {
+    "name": {
+     "value": "AIDA64 Cache & Memory Benchmark",
+     "basis": "stated"
+    },
+    "version": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "statistic": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "runs": {
+     "value": null,
+     "basis": "not_stated"
+    }
+   },
+   "measurements": [
+    {
+     "metric": "read_bw",
+     "value": null,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": {
+      "type": "range_across_dual_channel_configs",
+      "min": 63317,
+      "max": 63929
+     },
+     "note": "only the range over all dual-channel kits is stated; per-kit value in chart"
+    },
+    {
+     "metric": "latency_idle",
+     "value": 71.6,
+     "unit": "ns",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "ycruncher_2.5b_time",
+     "value": 52.04,
+     "unit": "s",
+     "basis": "stated",
+     "spread": null
+    }
+   ],
+   "notes": [
+    "write/copy and remaining latencies exist only as chart images (not retrieved)"
+   ],
+   "quality": [
+    "single_run_likely",
+    "windows",
+    "partial"
+   ]
+  },
+  {
+   "id": "tpu-04",
+   "source_id": "tpu-9800x3d-scaling",
+   "system": {
+    "cpu": {
+     "value": "Ryzen 7 9800X3D",
+     "basis": "stated"
+    },
+    "board": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "not retrieved"
+    },
+    "bios": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "os": {
+     "value": "Windows",
+     "basis": "inferred"
+    }
+   },
+   "memory": {
+    "type": {
+     "value": "DDR5",
+     "basis": "stated"
+    },
+    "mt_s": {
+     "value": 6000,
+     "basis": "stated"
+    },
+    "dimms": {
+     "value": 1,
+     "basis": "stated"
+    },
+    "channels": {
+     "value": 1,
+     "basis": "inferred"
+    },
+    "gb_per_dimm": {
+     "value": 16,
+     "basis": "stated"
+    },
+    "ranks": {
+     "value": 1,
+     "basis": "stated"
+    },
+    "vdimm_v": {
+     "value": 1.35,
+     "basis": "stated"
+    }
+   },
+   "timings": {
+    "tCL": {
+     "value": 30,
+     "basis": "stated"
+    },
+    "tRCD": {
+     "value": 40,
+     "basis": "stated"
+    },
+    "tRP": {
+     "value": 40,
+     "basis": "stated"
+    },
+    "tRAS": {
+     "value": 76,
+     "basis": "stated"
+    },
+    "tRC": {
+     "value": 116,
+     "basis": "stated"
+    },
+    "tRFC2": {
+     "value": 480,
+     "basis": "stated",
+     "note": "unit not stated (likely cycles)"
+    },
+    "tRFCsb": {
+     "value": 390,
+     "basis": "stated",
+     "note": "unit not stated (likely cycles)"
+    },
+    "profile": {
+     "value": "DDR5-6000 single DIMM",
+     "basis": "stated"
+    }
+   },
+   "clocks": {
+    "fclk_mhz": {
+     "value": 2000,
+     "basis": "stated"
+    },
+    "uclk_to_mclk": {
+     "value": 1.0,
+     "basis": "stated"
+    }
+   },
+   "tool": {
+    "name": {
+     "value": "AIDA64 Cache & Memory Benchmark",
+     "basis": "stated"
+    },
+    "version": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "statistic": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "runs": {
+     "value": null,
+     "basis": "not_stated"
+    }
+   },
+   "measurements": [
+    {
+     "metric": "read_bw",
+     "value": 46047,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "ycruncher_2.5b_time",
+     "value": 63.47,
+     "unit": "s",
+     "basis": "stated",
+     "spread": null
+    }
+   ],
+   "notes": [
+    "write/copy and remaining latencies exist only as chart images (not retrieved)"
+   ],
+   "quality": [
+    "single_run_likely",
+    "windows",
+    "partial"
+   ]
+  },
+  {
+   "id": "tpu-05",
+   "source_id": "tpu-9800x3d-scaling",
+   "system": {
+    "cpu": {
+     "value": "Ryzen 7 9800X3D",
+     "basis": "stated"
+    },
+    "board": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "not retrieved"
+    },
+    "bios": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "os": {
+     "value": "Windows",
+     "basis": "inferred"
+    }
+   },
+   "memory": {
+    "type": {
+     "value": "DDR5",
+     "basis": "stated"
+    },
+    "mt_s": {
+     "value": 6400,
+     "basis": "stated"
+    },
+    "dimms": {
+     "value": 2,
+     "basis": "stated"
+    },
+    "channels": {
+     "value": 2,
+     "basis": "inferred"
+    },
+    "gb_per_dimm": {
+     "value": 16,
+     "basis": "stated"
+    },
+    "ranks": {
+     "value": 1,
+     "basis": "stated"
+    },
+    "vdimm_v": {
+     "value": 1.35,
+     "basis": "stated"
+    }
+   },
+   "timings": {
+    "tCL": {
+     "value": 32,
+     "basis": "stated"
+    },
+    "tRCD": {
+     "value": 38,
+     "basis": "stated"
+    },
+    "tRP": {
+     "value": 38,
+     "basis": "stated"
+    },
+    "tRAS": {
+     "value": 78,
+     "basis": "stated"
+    },
+    "tRC": {
+     "value": 116,
+     "basis": "stated"
+    },
+    "tRFC2": {
+     "value": 512,
+     "basis": "stated",
+     "note": "unit not stated (likely cycles)"
+    },
+    "tRFCsb": {
+     "value": 416,
+     "basis": "stated",
+     "note": "unit not stated (likely cycles)"
+    },
+    "profile": {
+     "value": "DDR5-6400 2x16",
+     "basis": "stated"
+    }
+   },
+   "clocks": {
+    "fclk_mhz": {
+     "value": 2000,
+     "basis": "stated"
+    },
+    "uclk_to_mclk": {
+     "value": 1.0,
+     "basis": "stated"
+    }
+   },
+   "tool": {
+    "name": {
+     "value": "AIDA64 Cache & Memory Benchmark",
+     "basis": "stated"
+    },
+    "version": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "statistic": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "runs": {
+     "value": null,
+     "basis": "not_stated"
+    }
+   },
+   "measurements": [
+    {
+     "metric": "read_bw",
+     "value": null,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": {
+      "type": "range_across_dual_channel_configs",
+      "min": 63317,
+      "max": 63929
+     },
+     "note": "only the range over all dual-channel kits is stated; per-kit value in chart"
+    }
+   ],
+   "notes": [
+    "write/copy and remaining latencies exist only as chart images (not retrieved)"
+   ],
+   "quality": [
+    "single_run_likely",
+    "windows",
+    "partial"
+   ]
+  },
+  {
+   "id": "tpu-06",
+   "source_id": "tpu-9800x3d-scaling",
+   "system": {
+    "cpu": {
+     "value": "Ryzen 7 9800X3D",
+     "basis": "stated"
+    },
+    "board": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "not retrieved"
+    },
+    "bios": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "os": {
+     "value": "Windows",
+     "basis": "inferred"
+    }
+   },
+   "memory": {
+    "type": {
+     "value": "DDR5",
+     "basis": "stated"
+    },
+    "mt_s": {
+     "value": 6400,
+     "basis": "stated"
+    },
+    "dimms": {
+     "value": 2,
+     "basis": "stated"
+    },
+    "channels": {
+     "value": 2,
+     "basis": "inferred"
+    },
+    "gb_per_dimm": {
+     "value": 32,
+     "basis": "stated"
+    },
+    "ranks": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "vdimm_v": {
+     "value": 1.4,
+     "basis": "stated"
+    }
+   },
+   "timings": {
+    "tCL": {
+     "value": 32,
+     "basis": "stated"
+    },
+    "tRCD": {
+     "value": 39,
+     "basis": "stated"
+    },
+    "tRP": {
+     "value": 39,
+     "basis": "stated"
+    },
+    "tRAS": {
+     "value": 102,
+     "basis": "stated"
+    },
+    "tRC": {
+     "value": 156,
+     "basis": "stated"
+    },
+    "tRFC2": {
+     "value": 512,
+     "basis": "stated",
+     "note": "unit not stated (likely cycles)"
+    },
+    "tRFCsb": {
+     "value": 416,
+     "basis": "stated",
+     "note": "unit not stated (likely cycles)"
+    },
+    "profile": {
+     "value": "DDR5-6400 2x32",
+     "basis": "stated"
+    }
+   },
+   "clocks": {
+    "fclk_mhz": {
+     "value": 2000,
+     "basis": "stated"
+    },
+    "uclk_to_mclk": {
+     "value": 1.0,
+     "basis": "stated"
+    }
+   },
+   "tool": {
+    "name": {
+     "value": "AIDA64 Cache & Memory Benchmark",
+     "basis": "stated"
+    },
+    "version": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "statistic": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "runs": {
+     "value": null,
+     "basis": "not_stated"
+    }
+   },
+   "measurements": [
+    {
+     "metric": "read_bw",
+     "value": null,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": {
+      "type": "range_across_dual_channel_configs",
+      "min": 63317,
+      "max": 63929
+     },
+     "note": "only the range over all dual-channel kits is stated; per-kit value in chart"
+    }
+   ],
+   "notes": [
+    "write/copy and remaining latencies exist only as chart images (not retrieved)"
+   ],
+   "quality": [
+    "single_run_likely",
+    "windows",
+    "partial"
+   ]
+  },
+  {
+   "id": "tpu-07",
+   "source_id": "tpu-9800x3d-scaling",
+   "system": {
+    "cpu": {
+     "value": "Ryzen 7 9800X3D",
+     "basis": "stated"
+    },
+    "board": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "not retrieved"
+    },
+    "bios": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "os": {
+     "value": "Windows",
+     "basis": "inferred"
+    }
+   },
+   "memory": {
+    "type": {
+     "value": "DDR5",
+     "basis": "stated"
+    },
+    "mt_s": {
+     "value": 7600,
+     "basis": "stated"
+    },
+    "dimms": {
+     "value": 2,
+     "basis": "stated"
+    },
+    "channels": {
+     "value": 2,
+     "basis": "inferred"
+    },
+    "gb_per_dimm": {
+     "value": 16,
+     "basis": "stated"
+    },
+    "ranks": {
+     "value": 1,
+     "basis": "stated"
+    },
+    "vdimm_v": {
+     "value": 1.4,
+     "basis": "stated",
+     "note": "text says 1.45 V"
+    }
+   },
+   "timings": {
+    "tCL": {
+     "value": 36,
+     "basis": "stated"
+    },
+    "tRCD": {
+     "value": 46,
+     "basis": "stated"
+    },
+    "tRP": {
+     "value": 46,
+     "basis": "stated"
+    },
+    "tRAS": {
+     "value": 86,
+     "basis": "stated"
+    },
+    "tRC": {
+     "value": 132,
+     "basis": "stated"
+    },
+    "tRFC2": {
+     "value": 608,
+     "basis": "stated",
+     "note": "unit not stated (likely cycles)"
+    },
+    "tRFCsb": {
+     "value": 494,
+     "basis": "stated",
+     "note": "unit not stated (likely cycles)"
+    },
+    "profile": {
+     "value": "DDR5-7600",
+     "basis": "stated"
+    }
+   },
+   "clocks": {
+    "fclk_mhz": {
+     "value": 2000,
+     "basis": "stated"
+    },
+    "uclk_to_mclk": {
+     "value": 0.5,
+     "basis": "stated"
+    }
+   },
+   "tool": {
+    "name": {
+     "value": "AIDA64 Cache & Memory Benchmark",
+     "basis": "stated"
+    },
+    "version": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "statistic": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "runs": {
+     "value": null,
+     "basis": "not_stated"
+    }
+   },
+   "measurements": [
+    {
+     "metric": "read_bw",
+     "value": null,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": {
+      "type": "range_across_dual_channel_configs",
+      "min": 63317,
+      "max": 63929
+     },
+     "note": "only the range over all dual-channel kits is stated; per-kit value in chart"
+    }
+   ],
+   "notes": [
+    "write/copy and remaining latencies exist only as chart images (not retrieved)"
+   ],
+   "quality": [
+    "single_run_likely",
+    "windows",
+    "partial"
+   ]
+  },
+  {
+   "id": "tpu-08",
+   "source_id": "tpu-9800x3d-scaling",
+   "system": {
+    "cpu": {
+     "value": "Ryzen 7 9800X3D",
+     "basis": "stated"
+    },
+    "board": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "not retrieved"
+    },
+    "bios": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "os": {
+     "value": "Windows",
+     "basis": "inferred"
+    }
+   },
+   "memory": {
+    "type": {
+     "value": "DDR5",
+     "basis": "stated"
+    },
+    "mt_s": {
+     "value": 8000,
+     "basis": "stated"
+    },
+    "dimms": {
+     "value": 2,
+     "basis": "stated"
+    },
+    "channels": {
+     "value": 2,
+     "basis": "inferred"
+    },
+    "gb_per_dimm": {
+     "value": 16,
+     "basis": "stated"
+    },
+    "ranks": {
+     "value": 1,
+     "basis": "stated"
+    },
+    "vdimm_v": {
+     "value": 1.45,
+     "basis": "stated"
+    }
+   },
+   "timings": {
+    "tCL": {
+     "value": 38,
+     "basis": "stated"
+    },
+    "tRCD": {
+     "value": 48,
+     "basis": "stated"
+    },
+    "tRP": {
+     "value": 48,
+     "basis": "stated"
+    },
+    "tRAS": {
+     "value": 128,
+     "basis": "stated"
+    },
+    "tRC": {
+     "value": 176,
+     "basis": "stated"
+    },
+    "tRFC2": {
+     "value": 640,
+     "basis": "stated",
+     "note": "unit not stated (likely cycles)"
+    },
+    "tRFCsb": {
+     "value": 520,
+     "basis": "stated",
+     "note": "unit not stated (likely cycles)"
+    },
+    "profile": {
+     "value": "DDR5-8000",
+     "basis": "stated"
+    }
+   },
+   "clocks": {
+    "fclk_mhz": {
+     "value": 2000,
+     "basis": "stated"
+    },
+    "uclk_to_mclk": {
+     "value": 0.5,
+     "basis": "stated"
+    }
+   },
+   "tool": {
+    "name": {
+     "value": "AIDA64 Cache & Memory Benchmark",
+     "basis": "stated"
+    },
+    "version": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "statistic": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "runs": {
+     "value": null,
+     "basis": "not_stated"
+    }
+   },
+   "measurements": [
+    {
+     "metric": "read_bw",
+     "value": null,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": {
+      "type": "range_across_dual_channel_configs",
+      "min": 63317,
+      "max": 63929
+     },
+     "note": "only the range over all dual-channel kits is stated; per-kit value in chart"
+    },
+    {
+     "metric": "latency_idle",
+     "value": 71.9,
+     "unit": "ns",
+     "basis": "stated",
+     "spread": null
+    }
+   ],
+   "notes": [
+    "write/copy and remaining latencies exist only as chart images (not retrieved)"
+   ],
+   "quality": [
+    "single_run_likely",
+    "windows",
+    "partial"
+   ]
+  },
+  {
+   "id": "pcu-01",
+   "source_id": "pcunboxing-dual-platform",
+   "system": {
+    "cpu": {
+     "value": "Core Ultra 9 285K (QS)",
+     "basis": "stated"
+    },
+    "board": {
+     "value": "ASRock Z890 Taichi OCF",
+     "basis": "stated"
+    },
+    "bios": {
+     "value": "3.07",
+     "basis": "stated"
+    },
+    "os": {
+     "value": "Windows 11 Pro 24H2",
+     "basis": "stated"
+    }
+   },
+   "memory": {
+    "type": {
+     "value": "DDR5",
+     "basis": "stated"
+    },
+    "mt_s": {
+     "value": 6000,
+     "basis": "stated"
+    },
+    "dimms": {
+     "value": 2,
+     "basis": "stated"
+    },
+    "channels": {
+     "value": 2,
+     "basis": "stated"
+    },
+    "gb_per_dimm": {
+     "value": 16,
+     "basis": "stated"
+    },
+    "kit_part": {
+     "value": "F5-6000J2636H16GX2-TR5NS",
+     "basis": "stated"
+    },
+    "vdimm_v": {
+     "value": 1.45,
+     "basis": "stated"
+    }
+   },
+   "timings": {
+    "tCL": {
+     "value": 26,
+     "basis": "stated"
+    },
+    "tRCD": {
+     "value": 36,
+     "basis": "stated"
+    },
+    "tRP": {
+     "value": 36,
+     "basis": "stated"
+    },
+    "tRAS": {
+     "value": 96,
+     "basis": "stated"
+    },
+    "profile": {
+     "value": "XMP",
+     "basis": "stated"
+    }
+   },
+   "clocks": {
+    "gear": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "auto"
+    }
+   },
+   "tool": {
+    "name": {
+     "value": "AIDA64 Cache & Memory Benchmark",
+     "basis": "stated"
+    },
+    "version": {
+     "value": null,
+     "basis": "stated",
+     "note": "different versions on the two platforms"
+    },
+    "statistic": {
+     "value": "single run",
+     "basis": "stated"
+    },
+    "runs": {
+     "value": 1,
+     "basis": "stated"
+    }
+   },
+   "measurements": [
+    {
+     "metric": "latency_idle_rel",
+     "value": -1.3,
+     "unit": "%",
+     "basis": "stated",
+     "spread": null,
+     "relative_to": "pcu-02",
+     "note": "approx., vs 6000 CL28 kit on the same board"
+    }
+   ],
+   "quality": [
+    "single_run",
+    "windows",
+    "partial"
+   ]
+  },
+  {
+   "id": "pcu-02",
+   "source_id": "pcunboxing-dual-platform",
+   "system": {
+    "cpu": {
+     "value": "Core Ultra 9 285K (QS)",
+     "basis": "stated"
+    },
+    "board": {
+     "value": "ASRock Z890 Taichi OCF",
+     "basis": "stated"
+    },
+    "bios": {
+     "value": "3.07",
+     "basis": "stated"
+    },
+    "os": {
+     "value": "Windows 11 Pro 24H2",
+     "basis": "stated"
+    }
+   },
+   "memory": {
+    "type": {
+     "value": "DDR5",
+     "basis": "stated"
+    },
+    "mt_s": {
+     "value": 6000,
+     "basis": "stated"
+    },
+    "dimms": {
+     "value": 2,
+     "basis": "stated"
+    },
+    "channels": {
+     "value": 2,
+     "basis": "stated"
+    },
+    "gb_per_dimm": {
+     "value": 16,
+     "basis": "stated"
+    },
+    "kit_part": {
+     "value": "F5-6000J2836G16GX2-TR5NS",
+     "basis": "stated"
+    },
+    "vdimm_v": {
+     "value": 1.4,
+     "basis": "stated"
+    }
+   },
+   "timings": {
+    "tCL": {
+     "value": 28,
+     "basis": "stated"
+    },
+    "tRCD": {
+     "value": 36,
+     "basis": "stated"
+    },
+    "tRP": {
+     "value": 36,
+     "basis": "stated"
+    },
+    "tRAS": {
+     "value": 96,
+     "basis": "stated"
+    },
+    "profile": {
+     "value": "XMP",
+     "basis": "stated"
+    }
+   },
+   "clocks": {
+    "gear": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "auto"
+    }
+   },
+   "tool": {
+    "name": {
+     "value": "AIDA64 Cache & Memory Benchmark",
+     "basis": "stated"
+    },
+    "version": {
+     "value": null,
+     "basis": "stated",
+     "note": "different versions on the two platforms"
+    },
+    "statistic": {
+     "value": "single run",
+     "basis": "stated"
+    },
+    "runs": {
+     "value": 1,
+     "basis": "stated"
+    }
+   },
+   "measurements": [],
+   "notes": [
+    "absolute values only in screenshots"
+   ],
+   "quality": [
+    "single_run",
+    "windows",
+    "partial"
+   ]
+  },
+  {
+   "id": "pcu-03",
+   "source_id": "pcunboxing-dual-platform",
+   "system": {
+    "cpu": {
+     "value": "Core Ultra 9 285K (QS)",
+     "basis": "stated"
+    },
+    "board": {
+     "value": "ASRock Z890 Taichi OCF",
+     "basis": "stated"
+    },
+    "bios": {
+     "value": "3.07",
+     "basis": "stated"
+    },
+    "os": {
+     "value": "Windows 11 Pro 24H2",
+     "basis": "stated"
+    }
+   },
+   "memory": {
+    "type": {
+     "value": "DDR5",
+     "basis": "stated"
+    },
+    "mt_s": {
+     "value": 6400,
+     "basis": "stated"
+    },
+    "dimms": {
+     "value": 2,
+     "basis": "stated"
+    },
+    "channels": {
+     "value": 2,
+     "basis": "stated"
+    },
+    "gb_per_dimm": {
+     "value": 16,
+     "basis": "stated"
+    },
+    "kit_part": {
+     "value": "F5-6400J3239G16GX2-TR5S",
+     "basis": "stated"
+    },
+    "vdimm_v": {
+     "value": 1.4,
+     "basis": "stated"
+    }
+   },
+   "timings": {
+    "tCL": {
+     "value": 32,
+     "basis": "stated"
+    },
+    "tRCD": {
+     "value": 39,
+     "basis": "stated"
+    },
+    "tRP": {
+     "value": 39,
+     "basis": "stated"
+    },
+    "tRAS": {
+     "value": 102,
+     "basis": "stated"
+    },
+    "profile": {
+     "value": "XMP",
+     "basis": "stated"
+    }
+   },
+   "clocks": {
+    "gear": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "auto"
+    }
+   },
+   "tool": {
+    "name": {
+     "value": "AIDA64 Cache & Memory Benchmark",
+     "basis": "stated"
+    },
+    "version": {
+     "value": null,
+     "basis": "stated",
+     "note": "different versions on the two platforms"
+    },
+    "statistic": {
+     "value": "single run",
+     "basis": "stated"
+    },
+    "runs": {
+     "value": 1,
+     "basis": "stated"
+    }
+   },
+   "measurements": [
+    {
+     "metric": "latency_idle",
+     "value": 90.2,
+     "unit": "ns",
+     "basis": "stated",
+     "spread": null
+    }
+   ],
+   "quality": [
+    "single_run",
+    "windows",
+    "partial"
+   ]
+  },
+  {
+   "id": "pcu-04",
+   "source_id": "pcunboxing-dual-platform",
+   "system": {
+    "cpu": {
+     "value": "Ryzen 9 9950X3D",
+     "basis": "stated"
+    },
+    "board": {
+     "value": "GIGABYTE X870 AORUS TACHYON ICE",
+     "basis": "stated"
+    },
+    "bios": {
+     "value": "F4b",
+     "basis": "stated"
+    },
+    "os": {
+     "value": "Windows 11 Pro 24H2",
+     "basis": "stated"
+    }
+   },
+   "memory": {
+    "type": {
+     "value": "DDR5",
+     "basis": "stated"
+    },
+    "mt_s": {
+     "value": 6000,
+     "basis": "stated"
+    },
+    "dimms": {
+     "value": 2,
+     "basis": "stated"
+    },
+    "channels": {
+     "value": 2,
+     "basis": "stated"
+    },
+    "gb_per_dimm": {
+     "value": 16,
+     "basis": "stated"
+    },
+    "kit_part": {
+     "value": "F5-6000J2836G16GX2-TR5NS",
+     "basis": "stated"
+    },
+    "vdimm_v": {
+     "value": 1.4,
+     "basis": "stated"
+    }
+   },
+   "timings": {
+    "tCL": {
+     "value": 28,
+     "basis": "stated"
+    },
+    "tRCD": {
+     "value": 36,
+     "basis": "stated"
+    },
+    "tRP": {
+     "value": 36,
+     "basis": "stated"
+    },
+    "tRAS": {
+     "value": 96,
+     "basis": "stated"
+    },
+    "profile": {
+     "value": "EXPO/XMP",
+     "basis": "stated"
+    }
+   },
+   "clocks": {
+    "uclk_to_mclk": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "auto"
+    }
+   },
+   "tool": {
+    "name": {
+     "value": "AIDA64 Cache & Memory Benchmark",
+     "basis": "stated"
+    },
+    "version": {
+     "value": null,
+     "basis": "stated",
+     "note": "different versions on the two platforms"
+    },
+    "statistic": {
+     "value": "single run",
+     "basis": "stated"
+    },
+    "runs": {
+     "value": 1,
+     "basis": "stated"
+    }
+   },
+   "measurements": [],
+   "notes": [
+    "reference for pcu-05; absolute values only in screenshots"
+   ],
+   "quality": [
+    "single_run",
+    "windows",
+    "partial"
+   ]
+  },
+  {
+   "id": "pcu-05",
+   "source_id": "pcunboxing-dual-platform",
+   "system": {
+    "cpu": {
+     "value": "Ryzen 9 9950X3D",
+     "basis": "stated"
+    },
+    "board": {
+     "value": "GIGABYTE X870 AORUS TACHYON ICE",
+     "basis": "stated"
+    },
+    "bios": {
+     "value": "F4b",
+     "basis": "stated"
+    },
+    "os": {
+     "value": "Windows 11 Pro 24H2",
+     "basis": "stated"
+    }
+   },
+   "memory": {
+    "type": {
+     "value": "DDR5",
+     "basis": "stated"
+    },
+    "mt_s": {
+     "value": 8000,
+     "basis": "stated"
+    },
+    "dimms": {
+     "value": 2,
+     "basis": "stated"
+    },
+    "channels": {
+     "value": 2,
+     "basis": "stated"
+    },
+    "gb_per_dimm": {
+     "value": 24,
+     "basis": "stated"
+    },
+    "kit_part": {
+     "value": "F5-8000J4048G24GX2-TR5NS",
+     "basis": "stated"
+    },
+    "vdimm_v": {
+     "value": 1.4,
+     "basis": "stated"
+    }
+   },
+   "timings": {
+    "tCL": {
+     "value": 40,
+     "basis": "stated",
+     "note": "tRAS 127 = board BIOS cap (kit rated 128)"
+    },
+    "tRCD": {
+     "value": 48,
+     "basis": "stated",
+     "note": "tRAS 127 = board BIOS cap (kit rated 128)"
+    },
+    "tRP": {
+     "value": 48,
+     "basis": "stated",
+     "note": "tRAS 127 = board BIOS cap (kit rated 128)"
+    },
+    "tRAS": {
+     "value": 127,
+     "basis": "stated",
+     "note": "tRAS 127 = board BIOS cap (kit rated 128)"
+    },
+    "profile": {
+     "value": "XMP",
+     "basis": "stated"
+    }
+   },
+   "clocks": {
+    "uclk_to_mclk": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "auto"
+    }
+   },
+   "tool": {
+    "name": {
+     "value": "AIDA64 Cache & Memory Benchmark",
+     "basis": "stated"
+    },
+    "version": {
+     "value": null,
+     "basis": "stated",
+     "note": "different versions on the two platforms"
+    },
+    "statistic": {
+     "value": "single run",
+     "basis": "stated"
+    },
+    "runs": {
+     "value": 1,
+     "basis": "stated"
+    }
+   },
+   "measurements": [
+    {
+     "metric": "latency_idle",
+     "value": 84.9,
+     "unit": "ns",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "write_bw_rel",
+     "value": 15.4,
+     "unit": "%",
+     "basis": "stated",
+     "spread": null,
+     "relative_to": "pcu-04"
+    }
+   ],
+   "quality": [
+    "single_run",
+    "windows",
+    "partial"
+   ]
+  },
+  {
+   "id": "hwl-01",
+   "source_id": "hwluxx-tcreate",
+   "system": {
+    "cpu": {
+     "value": "Core Ultra 9 285K",
+     "basis": "stated"
+    },
+    "board": {
+     "value": "ASUS ROG Maximus Z890 Apex",
+     "basis": "stated"
+    },
+    "bios": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "os": {
+     "value": "Windows",
+     "basis": "inferred"
+    }
+   },
+   "memory": {
+    "type": {
+     "value": "DDR5",
+     "basis": "stated"
+    },
+    "mt_s": {
+     "value": 5600,
+     "basis": "stated"
+    },
+    "dimms": {
+     "value": 2,
+     "basis": "stated"
+    },
+    "channels": {
+     "value": 2,
+     "basis": "stated"
+    },
+    "gb_per_dimm": {
+     "value": 16,
+     "basis": "stated"
+    },
+    "ranks": {
+     "value": 1,
+     "basis": "stated"
+    },
+    "ic": {
+     "value": "SK Hynix M-die (x8)",
+     "basis": "stated"
+    },
+    "kit_part": {
+     "value": "CTCED532G7200HC34ADC01",
+     "basis": "stated"
+    },
+    "vdimm_v": {
+     "value": null,
+     "basis": "not_stated"
+    }
+   },
+   "timings": {
+    "tCL": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "JEDEC baseline, timings not printed"
+    },
+    "tRCD": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "JEDEC baseline, timings not printed"
+    },
+    "tRP": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "JEDEC baseline, timings not printed"
+    },
+    "tRAS": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "JEDEC baseline, timings not printed"
+    },
+    "profile": {
+     "value": "JEDEC",
+     "basis": "inferred"
+    }
+   },
+   "clocks": {
+    "gear": {
+     "value": null,
+     "basis": "not_stated"
+    }
+   },
+   "tool": {
+    "name": {
+     "value": "AIDA64 Cache & Memory Benchmark",
+     "basis": "stated"
+    },
+    "version": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "statistic": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "runs": {
+     "value": null,
+     "basis": "not_stated"
+    }
+   },
+   "measurements": [
+    {
+     "metric": "read_bw",
+     "value": 85180,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "write_bw",
+     "value": 75962,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "copy_bw",
+     "value": 78202,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "latency_idle",
+     "value": 99.1,
+     "unit": "ns",
+     "basis": "stated",
+     "spread": null
+    }
+   ],
+   "quality": [
+    "repeats_not_stated",
+    "windows",
+    "primaries_missing"
+   ]
+  },
+  {
+   "id": "hwl-02",
+   "source_id": "hwluxx-tcreate",
+   "system": {
+    "cpu": {
+     "value": "Core Ultra 9 285K",
+     "basis": "stated"
+    },
+    "board": {
+     "value": "ASUS ROG Maximus Z890 Apex",
+     "basis": "stated"
+    },
+    "bios": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "os": {
+     "value": "Windows",
+     "basis": "inferred"
+    }
+   },
+   "memory": {
+    "type": {
+     "value": "DDR5",
+     "basis": "stated"
+    },
+    "mt_s": {
+     "value": 6000,
+     "basis": "stated"
+    },
+    "dimms": {
+     "value": 2,
+     "basis": "stated"
+    },
+    "channels": {
+     "value": 2,
+     "basis": "stated"
+    },
+    "gb_per_dimm": {
+     "value": 16,
+     "basis": "stated"
+    },
+    "ranks": {
+     "value": 1,
+     "basis": "stated"
+    },
+    "ic": {
+     "value": "SK Hynix M-die (x8)",
+     "basis": "stated"
+    },
+    "kit_part": {
+     "value": "CTCED532G7200HC34ADC01",
+     "basis": "stated"
+    },
+    "vdimm_v": {
+     "value": 1.25,
+     "basis": "stated"
+    }
+   },
+   "timings": {
+    "tCL": {
+     "value": 38,
+     "basis": "stated"
+    },
+    "tRCD": {
+     "value": 38,
+     "basis": "stated"
+    },
+    "tRP": {
+     "value": 38,
+     "basis": "stated"
+    },
+    "tRAS": {
+     "value": 78,
+     "basis": "stated"
+    },
+    "tRC": {
+     "value": 116,
+     "basis": "stated"
+    },
+    "profile": {
+     "value": "XMP-6000",
+     "basis": "stated"
+    }
+   },
+   "clocks": {
+    "gear": {
+     "value": null,
+     "basis": "not_stated"
+    }
+   },
+   "tool": {
+    "name": {
+     "value": "AIDA64 Cache & Memory Benchmark",
+     "basis": "stated"
+    },
+    "version": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "statistic": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "runs": {
+     "value": null,
+     "basis": "not_stated"
+    }
+   },
+   "measurements": [
+    {
+     "metric": "read_bw",
+     "value": 90471,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "write_bw",
+     "value": 80962,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "copy_bw",
+     "value": 83516,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "latency_idle",
+     "value": 96.3,
+     "unit": "ns",
+     "basis": "stated",
+     "spread": null
+    }
+   ],
+   "quality": [
+    "repeats_not_stated",
+    "windows"
+   ]
+  },
+  {
+   "id": "hwl-03",
+   "source_id": "hwluxx-tcreate",
+   "system": {
+    "cpu": {
+     "value": "Core Ultra 9 285K",
+     "basis": "stated"
+    },
+    "board": {
+     "value": "ASUS ROG Maximus Z890 Apex",
+     "basis": "stated"
+    },
+    "bios": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "os": {
+     "value": "Windows",
+     "basis": "inferred"
+    }
+   },
+   "memory": {
+    "type": {
+     "value": "DDR5",
+     "basis": "stated"
+    },
+    "mt_s": {
+     "value": 6400,
+     "basis": "stated"
+    },
+    "dimms": {
+     "value": 2,
+     "basis": "stated"
+    },
+    "channels": {
+     "value": 2,
+     "basis": "stated"
+    },
+    "gb_per_dimm": {
+     "value": 16,
+     "basis": "stated"
+    },
+    "ranks": {
+     "value": 1,
+     "basis": "stated"
+    },
+    "ic": {
+     "value": "SK Hynix M-die (x8)",
+     "basis": "stated"
+    },
+    "kit_part": {
+     "value": "CTCED532G7200HC34ADC01",
+     "basis": "stated"
+    },
+    "vdimm_v": {
+     "value": null,
+     "basis": "not_stated"
+    }
+   },
+   "timings": {
+    "tCL": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "JEDEC/CUDIMM baseline, timings not printed"
+    },
+    "tRCD": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "JEDEC/CUDIMM baseline, timings not printed"
+    },
+    "tRP": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "JEDEC/CUDIMM baseline, timings not printed"
+    },
+    "tRAS": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "JEDEC/CUDIMM baseline, timings not printed"
+    },
+    "profile": {
+     "value": "JEDEC",
+     "basis": "inferred"
+    }
+   },
+   "clocks": {
+    "gear": {
+     "value": null,
+     "basis": "not_stated"
+    }
+   },
+   "tool": {
+    "name": {
+     "value": "AIDA64 Cache & Memory Benchmark",
+     "basis": "stated"
+    },
+    "version": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "statistic": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "runs": {
+     "value": null,
+     "basis": "not_stated"
+    }
+   },
+   "measurements": [
+    {
+     "metric": "read_bw",
+     "value": 95901,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "write_bw",
+     "value": 84730,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "copy_bw",
+     "value": 86807,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "latency_idle",
+     "value": 95.4,
+     "unit": "ns",
+     "basis": "stated",
+     "spread": null
+    }
+   ],
+   "quality": [
+    "repeats_not_stated",
+    "windows",
+    "primaries_missing"
+   ]
+  },
+  {
+   "id": "hwl-04",
+   "source_id": "hwluxx-tcreate",
+   "system": {
+    "cpu": {
+     "value": "Core Ultra 9 285K",
+     "basis": "stated"
+    },
+    "board": {
+     "value": "ASUS ROG Maximus Z890 Apex",
+     "basis": "stated"
+    },
+    "bios": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "os": {
+     "value": "Windows",
+     "basis": "inferred"
+    }
+   },
+   "memory": {
+    "type": {
+     "value": "DDR5",
+     "basis": "stated"
+    },
+    "mt_s": {
+     "value": 7200,
+     "basis": "stated"
+    },
+    "dimms": {
+     "value": 2,
+     "basis": "stated"
+    },
+    "channels": {
+     "value": 2,
+     "basis": "stated"
+    },
+    "gb_per_dimm": {
+     "value": 16,
+     "basis": "stated"
+    },
+    "ranks": {
+     "value": 1,
+     "basis": "stated"
+    },
+    "ic": {
+     "value": "SK Hynix M-die (x8)",
+     "basis": "stated"
+    },
+    "kit_part": {
+     "value": "CTCED532G7200HC34ADC01",
+     "basis": "stated"
+    },
+    "vdimm_v": {
+     "value": 1.4,
+     "basis": "stated"
+    }
+   },
+   "timings": {
+    "tCL": {
+     "value": 34,
+     "basis": "stated"
+    },
+    "tRCD": {
+     "value": 42,
+     "basis": "stated"
+    },
+    "tRP": {
+     "value": 42,
+     "basis": "stated"
+    },
+    "tRAS": {
+     "value": 84,
+     "basis": "stated"
+    },
+    "tRC": {
+     "value": 126,
+     "basis": "stated"
+    },
+    "profile": {
+     "value": "XMP-7200",
+     "basis": "stated"
+    }
+   },
+   "clocks": {
+    "gear": {
+     "value": null,
+     "basis": "not_stated"
+    }
+   },
+   "tool": {
+    "name": {
+     "value": "AIDA64 Cache & Memory Benchmark",
+     "basis": "stated"
+    },
+    "version": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "statistic": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "runs": {
+     "value": null,
+     "basis": "not_stated"
+    }
+   },
+   "measurements": [
+    {
+     "metric": "read_bw",
+     "value": 114873,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "write_bw",
+     "value": 101785,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "copy_bw",
+     "value": 104681,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "latency_idle",
+     "value": 78.3,
+     "unit": "ns",
+     "basis": "stated",
+     "spread": null
+    }
+   ],
+   "quality": [
+    "repeats_not_stated",
+    "windows"
+   ]
+  },
+  {
+   "id": "igl-01",
+   "source_id": "igorslab-265k-ngu-d2d",
+   "sequence": {
+    "group": "igl",
+    "step": 1,
+    "changed_from_previous": "D2D/NGU only"
+   },
+   "system": {
+    "cpu": {
+     "value": "Core Ultra 7 265K",
+     "basis": "stated"
+    },
+    "board": {
+     "value": "Gigabyte Z890 AORUS Elite X ICE",
+     "basis": "stated"
+    },
+    "bios": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "os": {
+     "value": "Windows",
+     "basis": "inferred",
+     "note": "from mlcdrv.sys / Secure Boot remarks"
+    }
+   },
+   "memory": {
+    "type": {
+     "value": "DDR5",
+     "basis": "stated"
+    },
+    "mt_s": {
+     "value": 7800,
+     "basis": "stated"
+    },
+    "ic": {
+     "value": "SK Hynix A-die",
+     "basis": "stated"
+    },
+    "dimms": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "channels": {
+     "value": 2,
+     "basis": "inferred"
+    }
+   },
+   "timings": {
+    "tCL": {
+     "value": 36,
+     "basis": "stated"
+    },
+    "tRCD": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "only CL stated"
+    },
+    "tRP": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "only CL stated"
+    },
+    "tRAS": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "only CL stated"
+    }
+   },
+   "clocks": {
+    "d2d_ghz": {
+     "value": 2.1,
+     "basis": "stated"
+    },
+    "ngu_ghz": {
+     "value": 2.6,
+     "basis": "stated"
+    },
+    "vnnaon_v": {
+     "value": 0.78,
+     "basis": "stated"
+    },
+    "vccsa_v": {
+     "value": 1.15,
+     "basis": "stated"
+    }
+   },
+   "tool": {
+    "name": {
+     "value": "Intel MLC",
+     "basis": "stated"
+    },
+    "version": {
+     "value": "3.12",
+     "basis": "stated"
+    },
+    "options": {
+     "value": "-v",
+     "basis": "stated"
+    },
+    "statistic": {
+     "value": "MLC default",
+     "basis": "stated"
+    },
+    "runs": {
+     "value": null,
+     "basis": "not_stated"
+    }
+   },
+   "measurements": [
+    {
+     "metric": "latency_idle",
+     "value": 86.3,
+     "unit": "ns",
+     "basis": "stated",
+     "spread": null,
+     "note": "MLC driver not loaded; source says this affects idle latency"
+    },
+    {
+     "metric": "all_reads_bw",
+     "value": 119649,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "rw_1to1_bw",
+     "value": 100642,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "triad_like_bw",
+     "value": 109160,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "latency_loaded_mean",
+     "value": 101.79,
+     "unit": "ns",
+     "basis": "stated",
+     "spread": null,
+     "note": "mean over injection delays 100–700"
+    }
+   ],
+   "quality": [
+    "reader_submitted",
+    "repeats_not_stated",
+    "primaries_incomplete"
+   ]
+  },
+  {
+   "id": "igl-02",
+   "source_id": "igorslab-265k-ngu-d2d",
+   "sequence": {
+    "group": "igl",
+    "step": 2,
+    "changed_from_previous": "D2D/NGU only"
+   },
+   "system": {
+    "cpu": {
+     "value": "Core Ultra 7 265K",
+     "basis": "stated"
+    },
+    "board": {
+     "value": "Gigabyte Z890 AORUS Elite X ICE",
+     "basis": "stated"
+    },
+    "bios": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "os": {
+     "value": "Windows",
+     "basis": "inferred",
+     "note": "from mlcdrv.sys / Secure Boot remarks"
+    }
+   },
+   "memory": {
+    "type": {
+     "value": "DDR5",
+     "basis": "stated"
+    },
+    "mt_s": {
+     "value": 7800,
+     "basis": "stated"
+    },
+    "ic": {
+     "value": "SK Hynix A-die",
+     "basis": "stated"
+    },
+    "dimms": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "channels": {
+     "value": 2,
+     "basis": "inferred"
+    }
+   },
+   "timings": {
+    "tCL": {
+     "value": 36,
+     "basis": "stated"
+    },
+    "tRCD": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "only CL stated"
+    },
+    "tRP": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "only CL stated"
+    },
+    "tRAS": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "only CL stated"
+    }
+   },
+   "clocks": {
+    "d2d_ghz": {
+     "value": 2.1,
+     "basis": "stated"
+    },
+    "ngu_ghz": {
+     "value": 3.4,
+     "basis": "stated"
+    },
+    "vnnaon_v": {
+     "value": 0.78,
+     "basis": "stated"
+    },
+    "vccsa_v": {
+     "value": 1.15,
+     "basis": "stated"
+    }
+   },
+   "tool": {
+    "name": {
+     "value": "Intel MLC",
+     "basis": "stated"
+    },
+    "version": {
+     "value": "3.12",
+     "basis": "stated"
+    },
+    "options": {
+     "value": "-v",
+     "basis": "stated"
+    },
+    "statistic": {
+     "value": "MLC default",
+     "basis": "stated"
+    },
+    "runs": {
+     "value": null,
+     "basis": "not_stated"
+    }
+   },
+   "measurements": [
+    {
+     "metric": "latency_idle",
+     "value": 79.2,
+     "unit": "ns",
+     "basis": "stated",
+     "spread": null,
+     "note": "MLC driver not loaded; source says this affects idle latency"
+    },
+    {
+     "metric": "all_reads_bw",
+     "value": 123395,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "rw_1to1_bw",
+     "value": 104104,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "triad_like_bw",
+     "value": 112578,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "latency_loaded_mean",
+     "value": 94.44,
+     "unit": "ns",
+     "basis": "stated",
+     "spread": null,
+     "note": "mean over injection delays 100–700"
+    }
+   ],
+   "quality": [
+    "reader_submitted",
+    "repeats_not_stated",
+    "primaries_incomplete"
+   ]
+  },
+  {
+   "id": "igl-03",
+   "source_id": "igorslab-265k-ngu-d2d",
+   "sequence": {
+    "group": "igl",
+    "step": 3,
+    "changed_from_previous": "D2D/NGU only"
+   },
+   "system": {
+    "cpu": {
+     "value": "Core Ultra 7 265K",
+     "basis": "stated"
+    },
+    "board": {
+     "value": "Gigabyte Z890 AORUS Elite X ICE",
+     "basis": "stated"
+    },
+    "bios": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "os": {
+     "value": "Windows",
+     "basis": "inferred",
+     "note": "from mlcdrv.sys / Secure Boot remarks"
+    }
+   },
+   "memory": {
+    "type": {
+     "value": "DDR5",
+     "basis": "stated"
+    },
+    "mt_s": {
+     "value": 7800,
+     "basis": "stated"
+    },
+    "ic": {
+     "value": "SK Hynix A-die",
+     "basis": "stated"
+    },
+    "dimms": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "channels": {
+     "value": 2,
+     "basis": "inferred"
+    }
+   },
+   "timings": {
+    "tCL": {
+     "value": 36,
+     "basis": "stated"
+    },
+    "tRCD": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "only CL stated"
+    },
+    "tRP": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "only CL stated"
+    },
+    "tRAS": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "only CL stated"
+    }
+   },
+   "clocks": {
+    "d2d_ghz": {
+     "value": 3.2,
+     "basis": "stated"
+    },
+    "ngu_ghz": {
+     "value": 2.6,
+     "basis": "stated"
+    },
+    "vnnaon_v": {
+     "value": 0.78,
+     "basis": "stated"
+    },
+    "vccsa_v": {
+     "value": 1.15,
+     "basis": "stated"
+    }
+   },
+   "tool": {
+    "name": {
+     "value": "Intel MLC",
+     "basis": "stated"
+    },
+    "version": {
+     "value": "3.12",
+     "basis": "stated"
+    },
+    "options": {
+     "value": "-v",
+     "basis": "stated"
+    },
+    "statistic": {
+     "value": "MLC default",
+     "basis": "stated"
+    },
+    "runs": {
+     "value": null,
+     "basis": "not_stated"
+    }
+   },
+   "measurements": [
+    {
+     "metric": "latency_idle",
+     "value": 77.8,
+     "unit": "ns",
+     "basis": "stated",
+     "spread": null,
+     "note": "MLC driver not loaded; source says this affects idle latency"
+    },
+    {
+     "metric": "all_reads_bw",
+     "value": 122446,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "rw_1to1_bw",
+     "value": 103751,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "triad_like_bw",
+     "value": 112674,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "latency_loaded_mean",
+     "value": 99.31,
+     "unit": "ns",
+     "basis": "stated",
+     "spread": null,
+     "note": "mean over injection delays 100–700"
+    }
+   ],
+   "quality": [
+    "reader_submitted",
+    "repeats_not_stated",
+    "primaries_incomplete"
+   ]
+  },
+  {
+   "id": "igl-04",
+   "source_id": "igorslab-265k-ngu-d2d",
+   "sequence": {
+    "group": "igl",
+    "step": 4,
+    "changed_from_previous": "D2D/NGU only"
+   },
+   "system": {
+    "cpu": {
+     "value": "Core Ultra 7 265K",
+     "basis": "stated"
+    },
+    "board": {
+     "value": "Gigabyte Z890 AORUS Elite X ICE",
+     "basis": "stated"
+    },
+    "bios": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "os": {
+     "value": "Windows",
+     "basis": "inferred",
+     "note": "from mlcdrv.sys / Secure Boot remarks"
+    }
+   },
+   "memory": {
+    "type": {
+     "value": "DDR5",
+     "basis": "stated"
+    },
+    "mt_s": {
+     "value": 7800,
+     "basis": "stated"
+    },
+    "ic": {
+     "value": "SK Hynix A-die",
+     "basis": "stated"
+    },
+    "dimms": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "channels": {
+     "value": 2,
+     "basis": "inferred"
+    }
+   },
+   "timings": {
+    "tCL": {
+     "value": 36,
+     "basis": "stated"
+    },
+    "tRCD": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "only CL stated"
+    },
+    "tRP": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "only CL stated"
+    },
+    "tRAS": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "only CL stated"
+    }
+   },
+   "clocks": {
+    "d2d_ghz": {
+     "value": 3.2,
+     "basis": "stated"
+    },
+    "ngu_ghz": {
+     "value": 3.4,
+     "basis": "stated"
+    },
+    "vnnaon_v": {
+     "value": 0.78,
+     "basis": "stated"
+    },
+    "vccsa_v": {
+     "value": 1.15,
+     "basis": "stated"
+    }
+   },
+   "tool": {
+    "name": {
+     "value": "Intel MLC",
+     "basis": "stated"
+    },
+    "version": {
+     "value": "3.12",
+     "basis": "stated"
+    },
+    "options": {
+     "value": "-v",
+     "basis": "stated"
+    },
+    "statistic": {
+     "value": "MLC default",
+     "basis": "stated"
+    },
+    "runs": {
+     "value": null,
+     "basis": "not_stated"
+    }
+   },
+   "measurements": [
+    {
+     "metric": "latency_idle",
+     "value": 76.1,
+     "unit": "ns",
+     "basis": "stated",
+     "spread": null,
+     "note": "MLC driver not loaded; source says this affects idle latency"
+    },
+    {
+     "metric": "all_reads_bw",
+     "value": 124312,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "rw_1to1_bw",
+     "value": 103959,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "triad_like_bw",
+     "value": 113083,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "latency_loaded_mean",
+     "value": 92.6,
+     "unit": "ns",
+     "basis": "stated",
+     "spread": null,
+     "note": "mean over injection delays 100–700"
+    }
+   ],
+   "quality": [
+    "reader_submitted",
+    "repeats_not_stated",
+    "primaries_incomplete"
+   ]
+  },
+  {
+   "id": "bt-01",
+   "source_id": "binarytides-mlc",
+   "system": {
+    "cpu": {
+     "value": "Ryzen 7 5800H",
+     "basis": "stated"
+    },
+    "board": {
+     "value": "Asus TUF A17 (laptop)",
+     "basis": "stated"
+    },
+    "os": {
+     "value": "Windows",
+     "basis": "stated"
+    }
+   },
+   "memory": {
+    "type": {
+     "value": "DDR4",
+     "basis": "stated"
+    },
+    "mt_s": {
+     "value": 3200,
+     "basis": "stated"
+    },
+    "dimms": {
+     "value": 2,
+     "basis": "stated"
+    },
+    "gb_per_dimm": {
+     "value": 8,
+     "basis": "stated"
+    },
+    "channels": {
+     "value": 2,
+     "basis": "inferred"
+    }
+   },
+   "timings": {
+    "tCL": {
+     "value": 22,
+     "basis": "stated"
+    },
+    "tRCD": {
+     "value": 22,
+     "basis": "stated"
+    },
+    "tRP": {
+     "value": 22,
+     "basis": "stated"
+    },
+    "tRAS": {
+     "value": 52,
+     "basis": "stated"
+    }
+   },
+   "clocks": {},
+   "tool": {
+    "name": {
+     "value": "Intel MLC",
+     "basis": "stated"
+    },
+    "version": {
+     "value": "3.10",
+     "basis": "stated"
+    },
+    "options": {
+     "value": "default",
+     "basis": "stated"
+    },
+    "statistic": {
+     "value": "MLC default",
+     "basis": "stated"
+    },
+    "runs": {
+     "value": 1,
+     "basis": "inferred"
+    }
+   },
+   "measurements": [
+    {
+     "metric": "latency_idle",
+     "value": 94.9,
+     "unit": "ns",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "all_reads_bw",
+     "value": 23367.7,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "rw_1to1_bw",
+     "value": 15764.0,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "triad_like_bw",
+     "value": 25578.0,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    }
+   ],
+   "notes": [],
+   "quality": [
+    "single_run"
+   ]
+  },
+  {
+   "id": "bt-02",
+   "source_id": "binarytides-mlc",
+   "system": {
+    "cpu": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "board": {
+     "value": "desktop, model not stated",
+     "basis": "stated"
+    },
+    "os": {
+     "value": "Ubuntu",
+     "basis": "stated"
+    }
+   },
+   "memory": {
+    "type": {
+     "value": "DDR4",
+     "basis": "stated"
+    },
+    "mt_s": {
+     "value": 2400,
+     "basis": "stated"
+    },
+    "dimms": {
+     "value": 2,
+     "basis": "stated"
+    },
+    "gb_per_dimm": {
+     "value": 16,
+     "basis": "stated"
+    },
+    "channels": {
+     "value": 2,
+     "basis": "inferred"
+    }
+   },
+   "timings": {
+    "tCL": {
+     "value": 16,
+     "basis": "stated"
+    },
+    "tRCD": {
+     "value": 16,
+     "basis": "stated"
+    },
+    "tRP": {
+     "value": 16,
+     "basis": "stated"
+    },
+    "tRAS": {
+     "value": 39,
+     "basis": "stated"
+    }
+   },
+   "clocks": {},
+   "tool": {
+    "name": {
+     "value": "Intel MLC",
+     "basis": "stated"
+    },
+    "version": {
+     "value": "3.10",
+     "basis": "stated"
+    },
+    "options": {
+     "value": "default",
+     "basis": "stated"
+    },
+    "statistic": {
+     "value": "MLC default",
+     "basis": "stated"
+    },
+    "runs": {
+     "value": 1,
+     "basis": "inferred"
+    }
+   },
+   "measurements": [
+    {
+     "metric": "latency_idle",
+     "value": 85.2,
+     "unit": "ns",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "all_reads_bw",
+     "value": 28155.5,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "rw_1to1_bw",
+     "value": 27399.4,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "triad_like_bw",
+     "value": 26994.1,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    }
+   ],
+   "notes": [
+    "MLC could not disable prefetchers (no msr module): random access used, latency not strictly comparable",
+    "timings as reported by SPD"
+   ],
+   "quality": [
+    "single_run"
+   ]
+  },
+  {
+   "id": "bt-03",
+   "source_id": "binarytides-mlc",
+   "system": {
+    "cpu": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "board": {
+     "value": "Acer Swift 3 (laptop)",
+     "basis": "stated"
+    },
+    "os": {
+     "value": "Windows",
+     "basis": "stated"
+    }
+   },
+   "memory": {
+    "type": {
+     "value": "LPDDR4X",
+     "basis": "inferred"
+    },
+    "mt_s": {
+     "value": 4267,
+     "basis": "stated"
+    },
+    "channels": {
+     "value": 2,
+     "basis": "stated"
+    }
+   },
+   "timings": {
+    "tCL": {
+     "value": 36,
+     "basis": "stated"
+    },
+    "tRCD": {
+     "value": 39,
+     "basis": "stated"
+    },
+    "tRP": {
+     "value": 39,
+     "basis": "stated"
+    },
+    "tRAS": {
+     "value": 90,
+     "basis": "stated"
+    }
+   },
+   "clocks": {},
+   "tool": {
+    "name": {
+     "value": "Intel MLC",
+     "basis": "stated"
+    },
+    "version": {
+     "value": "3.10",
+     "basis": "stated"
+    },
+    "options": {
+     "value": "default",
+     "basis": "stated"
+    },
+    "statistic": {
+     "value": "MLC default",
+     "basis": "stated"
+    },
+    "runs": {
+     "value": 1,
+     "basis": "inferred"
+    }
+   },
+   "measurements": [
+    {
+     "metric": "latency_idle",
+     "value": 99.4,
+     "unit": "ns",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "all_reads_bw",
+     "value": 60439.8,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "rw_1to1_bw",
+     "value": 46357.4,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "triad_like_bw",
+     "value": 60122.1,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    }
+   ],
+   "notes": [],
+   "quality": [
+    "single_run"
+   ]
+  },
+  {
+   "id": "cc-01",
+   "source_id": "curiouscoding-ddr",
+   "system": {
+    "cpu": {
+     "value": "Intel laptop CPU, model not named",
+     "basis": "stated"
+    },
+    "os": {
+     "value": "Arch Linux",
+     "basis": "stated"
+    }
+   },
+   "memory": {
+    "type": {
+     "value": "DDR4 SO-DIMM",
+     "basis": "stated"
+    },
+    "mt_s": {
+     "value": 3200,
+     "basis": "inferred",
+     "note": "SPD rating; live speed not shown"
+    },
+    "dimms": {
+     "value": 2,
+     "basis": "stated"
+    },
+    "gb_per_dimm": {
+     "value": 32,
+     "basis": "stated"
+    },
+    "ranks": {
+     "value": 2,
+     "basis": "stated"
+    },
+    "kit_part": {
+     "value": "SK Hynix HMAA4GS6AJR8N-XN",
+     "basis": "stated"
+    },
+    "channels": {
+     "value": 2,
+     "basis": "inferred"
+    }
+   },
+   "timings": {
+    "tCL": {
+     "value": 22,
+     "basis": "inferred",
+     "note": "SPD values; decode-dimms shows static SPD, not live settings"
+    },
+    "tRCD": {
+     "value": 22,
+     "basis": "inferred",
+     "note": "SPD values; decode-dimms shows static SPD, not live settings"
+    },
+    "tRP": {
+     "value": 22,
+     "basis": "inferred",
+     "note": "SPD values; decode-dimms shows static SPD, not live settings"
+    },
+    "tRAS": {
+     "value": 52,
+     "basis": "inferred",
+     "note": "SPD values; decode-dimms shows static SPD, not live settings"
+    },
+    "tRFC1_ns": {
+     "value": 350,
+     "basis": "inferred",
+     "note": "SPD"
+    }
+   },
+   "clocks": {
+    "core_ghz": {
+     "value": 3.0,
+     "basis": "stated",
+     "note": "pinned"
+    }
+   },
+   "tool": {
+    "name": {
+     "value": "tinymembench",
+     "basis": "stated"
+    },
+    "version": {
+     "value": "0.4.9",
+     "basis": "stated"
+    },
+    "statistic": {
+     "value": "mean with sample stdev",
+     "basis": "stated"
+    },
+    "runs": {
+     "value": null,
+     "basis": "not_stated"
+    }
+   },
+   "measurements": [
+    {
+     "metric": "memcpy_bw",
+     "value": 18125,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": {
+      "type": "stdev_pct",
+      "value": 1.8
+     }
+    },
+    {
+     "metric": "memset_bw",
+     "value": 43982,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "nt_fill_bw",
+     "value": 44182.7,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null,
+     "note": "SSE2 non-temporal fill"
+    },
+    {
+     "metric": "c_copy_bw",
+     "value": 11689.6,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "latency_random_64MiB",
+     "value": 64.9,
+     "unit": "ns",
+     "basis": "stated",
+     "spread": null,
+     "note": "4K pages"
+    },
+    {
+     "metric": "latency_random_64MiB_hugepage",
+     "value": 55.3,
+     "unit": "ns",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "latency_dual_random_64MiB",
+     "value": 75.9,
+     "unit": "ns",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "latency_dual_random_64MiB_hugepage",
+     "value": 66.6,
+     "unit": "ns",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "stream_read_bw_6threads",
+     "value": 37,
+     "unit": "GB/s",
+     "basis": "inferred",
+     "spread": null,
+     "note": "derived from ~1.73 ns per cache line, author's custom Rust benchmark"
+    }
+   ],
+   "quality": [
+    "linux",
+    "timings_from_spd"
+   ]
+  },
+  {
+   "id": "fps-01",
+   "source_id": "fpsreview-ballistix-3600",
+   "system": {
+    "cpu": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "AM4 Ryzen, model not retrieved"
+    },
+    "board": {
+     "value": "ASUS TUF GAMING X570-Plus WiFi",
+     "basis": "inferred",
+     "note": "per PC Perspective review of the same kit (2021-11-03)"
+    },
+    "os": {
+     "value": "Windows",
+     "basis": "inferred"
+    }
+   },
+   "memory": {
+    "type": {
+     "value": "DDR4",
+     "basis": "stated"
+    },
+    "mt_s": {
+     "value": 2667,
+     "basis": "stated"
+    },
+    "dimms": {
+     "value": 2,
+     "basis": "stated"
+    },
+    "channels": {
+     "value": 2,
+     "basis": "inferred"
+    },
+    "gb_per_dimm": {
+     "value": 8,
+     "basis": "stated"
+    },
+    "kit_part": {
+     "value": "BL8G36C16U4B.M8FE1",
+     "basis": "stated"
+    },
+    "vdimm_v": {
+     "value": null,
+     "basis": "not_stated"
+    }
+   },
+   "timings": {
+    "tCL": {
+     "value": 20,
+     "basis": "stated"
+    },
+    "tRCD": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "JEDEC, not printed"
+    },
+    "tRP": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "JEDEC, not printed"
+    },
+    "tRAS": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "JEDEC, not printed"
+    },
+    "profile": {
+     "value": "Auto (JEDEC)",
+     "basis": "stated"
+    }
+   },
+   "clocks": {
+    "fclk_to_mclk": {
+     "value": 1.0,
+     "basis": "stated"
+    }
+   },
+   "tool": {
+    "name": {
+     "value": "AIDA64 Cache & Memory Benchmark",
+     "basis": "stated"
+    },
+    "version": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "statistic": {
+     "value": "rounded values from charts in text",
+     "basis": "stated"
+    },
+    "runs": {
+     "value": null,
+     "basis": "not_stated"
+    }
+   },
+   "measurements": [
+    {
+     "metric": "read_bw",
+     "value": 38,
+     "unit": "GB/s",
+     "basis": "stated",
+     "spread": null,
+     "note": "rounded"
+    },
+    {
+     "metric": "write_bw",
+     "value": 21,
+     "unit": "GB/s",
+     "basis": "stated",
+     "spread": null,
+     "note": "rounded"
+    },
+    {
+     "metric": "copy_bw",
+     "value": 35,
+     "unit": "GB/s",
+     "basis": "stated",
+     "spread": null,
+     "note": "rounded"
+    },
+    {
+     "metric": "latency_idle",
+     "value": 80,
+     "unit": "ns",
+     "basis": "stated",
+     "spread": null,
+     "note": "approx."
+    },
+    {
+     "metric": "passmark_random_latency",
+     "value": 98,
+     "unit": "ns",
+     "basis": "stated",
+     "spread": null
+    }
+   ],
+   "quality": [
+    "windows",
+    "rounded_values"
+   ]
+  },
+  {
+   "id": "fps-02",
+   "source_id": "fpsreview-ballistix-3600",
+   "system": {
+    "cpu": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "AM4 Ryzen, model not retrieved"
+    },
+    "board": {
+     "value": "ASUS TUF GAMING X570-Plus WiFi",
+     "basis": "inferred",
+     "note": "per PC Perspective review of the same kit (2021-11-03)"
+    },
+    "os": {
+     "value": "Windows",
+     "basis": "inferred"
+    }
+   },
+   "memory": {
+    "type": {
+     "value": "DDR4",
+     "basis": "stated"
+    },
+    "mt_s": {
+     "value": 3600,
+     "basis": "stated"
+    },
+    "dimms": {
+     "value": 2,
+     "basis": "stated"
+    },
+    "channels": {
+     "value": 2,
+     "basis": "inferred"
+    },
+    "gb_per_dimm": {
+     "value": 8,
+     "basis": "stated"
+    },
+    "kit_part": {
+     "value": "BL8G36C16U4B.M8FE1",
+     "basis": "stated"
+    },
+    "vdimm_v": {
+     "value": 1.35,
+     "basis": "stated"
+    }
+   },
+   "timings": {
+    "tCL": {
+     "value": 16,
+     "basis": "stated"
+    },
+    "tRCD": {
+     "value": 18,
+     "basis": "stated"
+    },
+    "tRP": {
+     "value": 18,
+     "basis": "stated"
+    },
+    "tRAS": {
+     "value": 38,
+     "basis": "stated"
+    },
+    "command_rate": {
+     "value": "1T",
+     "basis": "stated"
+    },
+    "profile": {
+     "value": "D.O.C.P 3600 1.35 V",
+     "basis": "stated"
+    }
+   },
+   "clocks": {
+    "fclk_to_mclk": {
+     "value": 1.0,
+     "basis": "stated"
+    }
+   },
+   "tool": {
+    "name": {
+     "value": "AIDA64 Cache & Memory Benchmark",
+     "basis": "stated"
+    },
+    "version": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "statistic": {
+     "value": "rounded values from charts in text",
+     "basis": "stated"
+    },
+    "runs": {
+     "value": null,
+     "basis": "not_stated"
+    }
+   },
+   "measurements": [
+    {
+     "metric": "read_bw",
+     "value": 51,
+     "unit": "GB/s",
+     "basis": "stated",
+     "spread": null,
+     "note": "rounded"
+    },
+    {
+     "metric": "write_bw",
+     "value": 28,
+     "unit": "GB/s",
+     "basis": "stated",
+     "spread": null,
+     "note": "rounded"
+    },
+    {
+     "metric": "copy_bw",
+     "value": 45,
+     "unit": "GB/s",
+     "basis": "stated",
+     "spread": null,
+     "note": "rounded"
+    },
+    {
+     "metric": "latency_idle",
+     "value": 60,
+     "unit": "ns",
+     "basis": "stated",
+     "spread": null,
+     "note": "approx."
+    },
+    {
+     "metric": "passmark_random_latency",
+     "value": 78,
+     "unit": "ns",
+     "basis": "stated",
+     "spread": null
+    }
+   ],
+   "quality": [
+    "windows",
+    "rounded_values"
+   ]
+  },
+  {
+   "id": "fps-03",
+   "source_id": "fpsreview-ballistix-3600",
+   "system": {
+    "cpu": {
+     "value": null,
+     "basis": "not_stated",
+     "note": "AM4 Ryzen, model not retrieved"
+    },
+    "board": {
+     "value": "ASUS TUF GAMING X570-Plus WiFi",
+     "basis": "inferred",
+     "note": "per PC Perspective review of the same kit (2021-11-03)"
+    },
+    "os": {
+     "value": "Windows",
+     "basis": "inferred"
+    }
+   },
+   "memory": {
+    "type": {
+     "value": "DDR4",
+     "basis": "stated"
+    },
+    "mt_s": {
+     "value": 3933,
+     "basis": "stated"
+    },
+    "dimms": {
+     "value": 2,
+     "basis": "stated"
+    },
+    "channels": {
+     "value": 2,
+     "basis": "inferred"
+    },
+    "gb_per_dimm": {
+     "value": 8,
+     "basis": "stated"
+    },
+    "kit_part": {
+     "value": "BL8G36C16U4B.M8FE1",
+     "basis": "stated"
+    },
+    "vdimm_v": {
+     "value": null,
+     "basis": "not_stated"
+    }
+   },
+   "timings": {
+    "tCL": {
+     "value": 16,
+     "basis": "stated"
+    },
+    "tRCD": {
+     "value": 18,
+     "basis": "stated"
+    },
+    "tRP": {
+     "value": 18,
+     "basis": "stated"
+    },
+    "tRAS": {
+     "value": 38,
+     "basis": "stated"
+    },
+    "command_rate": {
+     "value": "1T",
+     "basis": "inferred"
+    },
+    "profile": {
+     "value": "manual OC",
+     "basis": "stated"
+    }
+   },
+   "clocks": {
+    "fclk_to_mclk": {
+     "value": 1.0,
+     "basis": "stated"
+    }
+   },
+   "tool": {
+    "name": {
+     "value": "AIDA64 Cache & Memory Benchmark",
+     "basis": "stated"
+    },
+    "version": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "statistic": {
+     "value": "rounded values from charts in text",
+     "basis": "stated"
+    },
+    "runs": {
+     "value": null,
+     "basis": "not_stated"
+    }
+   },
+   "measurements": [
+    {
+     "metric": "read_bw",
+     "value": 55,
+     "unit": "GB/s",
+     "basis": "stated",
+     "spread": null,
+     "note": "rounded"
+    },
+    {
+     "metric": "write_bw",
+     "value": 31,
+     "unit": "GB/s",
+     "basis": "stated",
+     "spread": null,
+     "note": "rounded"
+    },
+    {
+     "metric": "copy_bw",
+     "value": 49,
+     "unit": "GB/s",
+     "basis": "inferred",
+     "spread": null,
+     "note": "rounded; ~49 approximate"
+    },
+    {
+     "metric": "latency_idle",
+     "value": 57,
+     "unit": "ns",
+     "basis": "stated",
+     "spread": null,
+     "note": "approx."
+    },
+    {
+     "metric": "passmark_random_latency",
+     "value": 74,
+     "unit": "ns",
+     "basis": "stated",
+     "spread": null
+    }
+   ],
+   "quality": [
+    "windows",
+    "rounded_values"
+   ]
+  },
+  {
+   "id": "wp-01",
+   "source_id": "whirlpool-aida-thread",
+   "system": {
+    "cpu": {
+     "value": "Ryzen 7 9800X3D",
+     "basis": "stated"
+    },
+    "board": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "os": {
+     "value": "Windows",
+     "basis": "stated"
+    }
+   },
+   "memory": {
+    "type": {
+     "value": "DDR5",
+     "basis": "stated"
+    },
+    "mt_s": {
+     "value": 6200,
+     "basis": "stated"
+    },
+    "vdimm_v": {
+     "value": 1.45,
+     "basis": "stated"
+    },
+    "dimms": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "channels": {
+     "value": 2,
+     "basis": "inferred"
+    }
+   },
+   "timings": {
+    "tCL": {
+     "value": 26,
+     "basis": "stated"
+    },
+    "tRCD": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "tRP": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "tRAS": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "power_down": {
+     "value": true,
+     "basis": "stated"
+    },
+    "gear_down_mode": {
+     "value": true,
+     "basis": "stated"
+    }
+   },
+   "clocks": {},
+   "tool": {
+    "name": {
+     "value": "AIDA64 Cache & Memory Benchmark",
+     "basis": "stated"
+    },
+    "version": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "statistic": {
+     "value": null,
+     "basis": "not_stated"
+    },
+    "runs": {
+     "value": 1,
+     "basis": "inferred"
+    }
+   },
+   "measurements": [
+    {
+     "metric": "read_bw",
+     "value": 66020,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "write_bw",
+     "value": 95381,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "copy_bw",
+     "value": 68167,
+     "unit": "MB/s",
+     "basis": "stated",
+     "spread": null
+    },
+    {
+     "metric": "latency_idle",
+     "value": 60.0,
+     "unit": "ns",
+     "basis": "stated",
+     "spread": null
+    }
+   ],
+   "notes": [
+    "single forum post; mapping of screenshot to setting not verified"
+   ],
+   "quality": [
+    "anecdotal",
+    "primaries_incomplete"
+   ]
+  }
+ ],
+ "gaps": [
+  {
+   "source": "TechPowerUp, DDR5 Memory Performance Scaling with Alder Lake Core i9-12900K",
+   "url": "https://www.techpowerup.com/review/ddr5-memory-performance-scaling/",
+   "known_config": "i9-12900K, ASUS Z690 Maximus Hero BIOS 0702, 2x16 GB G.Skill Trident Z5, DDR5-2400..6000 at 36-36-36-76 2T Gear 2, plus 4800 at 30-30-30-70 and CL40",
+   "missing": "AIDA64 values (chart images)"
+  },
+  {
+   "source": "TechPowerUp, DDR5 Memory Performance Scaling with AMD Zen 5",
+   "url": "https://www.techpowerup.com/review/ddr5-memory-performance-scaling-with-amd-zen-5/2.html",
+   "known_config": "Ryzen 9 9950X; 8000 38-48-48-127 1:2; 7200 34-42-42-84 1:2 (conclusion says 7600 CL34); 6400 32-38-38-76 1:1; 6000 28-36-36-72 1:1; 4800 40-40-40-77; 5600 JEDEC",
+   "missing": "AIDA64 values (chart images)"
+  },
+  {
+   "source": "PC Unboxing, AMD DDR5 6000 or 8000? (2026-02-25)",
+   "url": "https://pcunboxing.com/en/amd-ddr5/",
+   "known_config": "9950X3D, ASRock X870E Taichi OCF BIOS 1.03, Origin Code Vortex 2x24 GB: 6000 26-36-36-76 1.45 V UCLK=MCLK / 8000 36-47-47-108 1.45 V UCLK=MCLK/2",
+   "missing": "all values (screenshots)"
+  },
+  {
+   "source": "The FPS Review, i5-12600K DDR4 vs DDR5",
+   "url": "https://www.thefpsreview.com/2021/12/13/intel-core-i5-12600k-alder-lake-ddr4-vs-ddr5-performance/6/",
+   "known_values": "DDR5-5200 read 76 / write 73 / copy 71 GB/s, 82.1 ns; DDR4 56/56/52 GB/s, 76.1 ns",
+   "missing": "timings (on an unretrieved page)"
+  }
+ ]
+}

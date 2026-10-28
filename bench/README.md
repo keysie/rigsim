@@ -6,6 +6,7 @@ no installation. Two layers:
 | Layer | What it is | Needs |
 |---|---|---|
 | **standalone** (this folder) | measure one engine behind an OpenAI-compatible URL, measure memory bandwidth, inspect a host, turn results into the simulator's "measured values" | Python 3.11+, the engine running |
+| **hardware** (`hw/`) | low-level questions for the hardware model (cuBLAS, VRAM, PCIe, core ladders, latency, NVMe), containers only, run from an Ansible control node | Docker, NVIDIA container toolkit, Ansible — see `hw/README.md` |
 | **queue** (`queue/`) | run a whole plan of variants × workloads unattended with Docker Compose restarts, resume, reports, charts | Docker Compose and a site-specific wrapper — kept as reference for how the calibration passes were run; adapt before use |
 
 ## Measure one engine

@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "note": "Absolute SM clock (MHz) vs board power limit (W), per card and load class. 'compute' = reading a prompt (large matrix products), 'memory' = writing (matrix-vector products). Medians of the samples inside each phase.",
+  "curves": [
+    {"id": "box-3090-pci0-pass3", "model": "rtx-3090", "card": "reference box, PCI index 0 in pass 3 (inferred: the Gigabyte card)",
+     "source": "AI-SERVER docs/bench-data bench-pass3-20261022-1542, boxstats.csv (~1.2 s samples), Strata 0.1.43.1 on one card, items p3-b1-mtp-220w / p3-b1-mtp / p3-b1-mtp-300w",
+     "trust": "medium", "use": "calibration",
+     "primitive": "sm_clock",
+     "points": {"compute": [[220, 1252], [250, 1575], [300, 1672]],
+                "memory":  [[220, 1500], [250, 1620], [300, 1770]]},
+     "spread_note": "p10-p90 of the samples: compute 1095-1455 / 1425-1800 / 1635-1890; memory 1335-1680 / 1515-1785 / 1695-1875 MHz; at 300 W the card drew 284-290 W (below the limit)"},
+    {"id": "hopper-dissecting-4090", "model": "rtx-4090", "card": "RTX 4090 in the Hopper-dissecting paper",
+     "source": "gpu-bench-data.json, hopper-dissecting: dense mma throughput / (128 SMs x per-SM rate); no clock or power stated",
+     "trust": "medium", "use": "calibration", "basis": "inferred",
+     "primitive": "sm_clock", "points": {"compute": [[450, 2733]]},
+     "spread_note": "per precision 2714-2730 MHz (FP16, FP16/FP32-acc, TF32)"}
+  ],
+  "validation": [
+    {"id": "box-3090-pass6-220w", "model": "rtx-3090",
+     "source": "AI-SERVER bench-pass6rw-20261026-1147, gpufast.csv (100 ms), Strata layer split over two cards (half the layers each), 220 W",
+     "trust": "medium",
+     "points": [
+       {"card": "gpu1 (Gigabyte; pass-3 card, inferred)", "load_class": "compute", "limit_w": 220, "sm_mhz": 1845},
+       {"card": "gpu2 (ASUS Tuf)", "load_class": "compute", "limit_w": 220, "sm_mhz": 1770},
+       {"card": "gpu1 (Gigabyte; pass-3 card, inferred)", "load_class": "memory", "limit_w": 220, "sm_mhz": 1845},
+       {"card": "gpu2 (ASUS Tuf)", "load_class": "memory", "limit_w": 220, "sm_mhz": 1695}]}
+  ]
+}

@@ -1,0 +1,29 @@
+question = "gpu-clock-power"
+asks = """At what SM and VRAM clock does each card run against its power limit, for compute-heavy and for
+memory-heavy load — and does it depend on how busy the card is (busy share)?"""
+feeds = """hw/power.py curves per (sm_clock / vram_bandwidth, load class) per card. The busy-share axis tests the pass-6
+miss: the same 3090 at 220 W read at 1252 MHz on one card but ~1.8 GHz as one stage of a split (proposal §10)."""
+method = """Sustained load in bursts: 'compute' = FP16 GEMM 8192^3 on random data, 'memory' = streaming read of 4 GiB;
+duty = share of each 20 ms period spent working, the rest idle. nvidia-smi samples every 100 ms on the host."""
+image = "nvidia/cuda:12.8.1-devel-ubuntu24.04"
+toolkit = "cuda"
+gpus = "item"
+exclusive = true
+repeats = 2
+sample_ms = 100
+timeout_s = 180
+max_gpu_temp_c = 87
+
+[grid]
+gpu = ["@all"]
+power_w = [100, 120, 140, 170, 200, 220, 250, 280, 300, 350]
+load = ["compute", "memory"]
+duty = [1.0, 0.75, 0.5, 0.25]
+
+[args]
+seconds = 30
+cmd = ["probe", "load", "--kind", "{load}", "--duty", "{duty}", "--seconds", "{seconds}"]
+
+[smoke]
+grid = { power_w = [170], load = ["compute", "memory"], duty = [1.0, 0.5] }
+args = { seconds = 5 }

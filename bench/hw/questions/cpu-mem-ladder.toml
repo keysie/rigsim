@@ -1,0 +1,30 @@
+question = "cpu-mem-ladder"
+asks = """How does RAM read bandwidth grow with the number of cores (the per-core link), where does it saturate, does
+the cap depend on instruction width (it should not), and does the per-core value move with core clock (per-core
+compute) or not (per-core bandwidth)?"""
+feeds = """The core group's per-core link bandwidth and the RAM efficiency (hw/arch.py, hw/cpus.py); separates
+per-core compute from per-core bandwidth (open point in proposal §9)."""
+method = """likwid-bench load kernels (read only) on a 2 GB working set, threads pinned to physical cores (SMT siblings
+left out), 20 iterations; core clock pinned on the host for the item (scaling_min = scaling_max, governor
+performance), restored after it."""
+image = "debian:trixie"
+toolkit = "cpu"
+gpus = "none"
+exclusive = true
+repeats = 3
+timeout_s = 300
+
+[grid]
+kernel = ["load_sse", "load_avx", "load_avx512"]
+threads = [1, 2, 3, 4, 5, 6, 8, 10]
+cpu_mhz = [1200, 2400, 3600]
+
+[args]
+size = "2GB"
+iterations = 20
+cmd = ["cpuprobe", "ladder", "--kernel", "{kernel}", "--threads", "{threads}", "--size", "{size}",
+       "--iterations", "{iterations}"]
+
+[smoke]
+grid = { kernel = ["load_avx"], threads = [1, 4], cpu_mhz = [2400] }
+args = { iterations = 3 }

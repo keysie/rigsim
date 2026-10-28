@@ -1,0 +1,24 @@
+question = "cpu-mem-latency"
+asks = """What is the idle RAM access latency on this machine, from which working-set size on, and does it change
+with core clock?"""
+feeds = """RAM storage access time (CAS time + the fixed controller/fabric term per CPU family, hw/arch.py)."""
+method = """Pointer chase over a random cyclic permutation of 64-byte lines (transparent huge pages requested), one
+thread; ns per dependent load, median of 5 passes."""
+image = "debian:trixie"
+toolkit = "cpu"
+gpus = "none"
+exclusive = true
+repeats = 3
+timeout_s = 300
+
+[grid]
+mib = [64, 256, 1024, 4096]
+cpu_mhz = [1200, 2400, 3600]
+
+[args]
+passes = 5
+cmd = ["cpuprobe", "latency", "--mib", "{mib}", "--passes", "{passes}"]
+
+[smoke]
+grid = { mib = [1024], cpu_mhz = [2400] }
+args = { passes = 1 }
