@@ -25,6 +25,15 @@ GPUS = {
                                          "int8_tensor": 2048, "int4_tensor": 4096},
                          arch_source="spec sheet: 3 GPCs, 28 SMs, 3 MB L2, 192-bit GDDR6 at 15 Gbps; 1320 MHz base",
                      source="NVIDIA spec sheet (28 SMs, 1777 MHz boost, 360 GB/s); per-SM rates as GA102 (same SM)"),
+    "rtx-3080": dict(arch="ampere", die="GA102", sms=68, boost_mhz=1710, tdp_w=320, vram_gb=10, vram_gbs=760.3,
+                     base_mhz=1440, gpcs=6, l2_mb=5, mem_type="GDDR6X", mem_controllers=10, mem_gbps=19.0, copy_engines=None,
+                     pcie_gen=4, pcie_lanes=16,
+                     ops_per_clk_per_sm={"fp32": 256, "tf32_tensor": 256, "fp16_tensor_fp32acc": 512, "fp16_tensor": 1024,
+                                         "int8_tensor": 2048, "int4_tensor": 4096},
+                     arch_source="GA102 whitepaper, RTX 3080 column: 6 GPCs, 68 SMs, 5 MB L2, 10 x 32-bit controllers, "
+                                 "10 GB GDDR6X at 19 Gbps; 1440 MHz base",
+                     source="NVIDIA Ampere GA102 whitepaper (RTX 3080 10 GB: 68 SMs, 1710 MHz boost, 760 GB/s, 320 W); "
+                            "per-SM rates as GA102 (same SM)"),
     "rtx-3070-ti": dict(arch="ampere", die="GA104", sms=48, boost_mhz=1770, tdp_w=290, vram_gb=8, vram_gbs=608.3,
                         base_mhz=1575, gpcs=6, l2_mb=4, mem_type="GDDR6X", mem_controllers=8, mem_gbps=19.0, copy_engines=None,
                      pcie_gen=4, pcie_lanes=16,
