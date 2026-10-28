@@ -39,7 +39,7 @@ def test_predictions_and_reasons(tmp_path):
     reasons = {u["key"]: u["reason"] for u in unsup}
     assert "vulkan backend not modelled" in reasons["llama-bench/vulkan/dev0/llama-2-7b-q4_0/tg128"]
     assert "model architecture not described" in reasons["llama-bench/cuda/gpu0/mistral-7b-q4_0/tg128"]
-    assert reasons["mlc/idle_latency"] == "not modelled yet"
+    assert "CPU not in rigsim's catalogue" in reasons["mlc/idle_latency"]
 
 
 def test_unknown_gpu_and_cli(tmp_path):
@@ -49,3 +49,74 @@ def test_unknown_gpu_and_cli(tmp_path):
     assert P.main(["--run", str(run), "--measurements", str(mf), "--out", str(of)]) == 0
     out = json.loads(of.read_text())
     assert out["predictions"] == [] and "not in rigsim's catalogue: NVIDIA GeForce RTX 5090" in out["unsupported"][0]["reason"]
+
+
+def cpu_run(tmp_path, cpu="13th Gen Intel(R) Core(TM) i7-13700K", mem="DDR5", mts=5600, ndimm=2):
+    run = tmp_path / "cpu"; (run / "inventory").mkdir(parents=True)
+    (run / "run.json").write_text(json.dumps(dict(hardware=dict(cpu=cpu, gpus=[]))))
+    rows = ["CPU NODE SOCKET CORE L1d:L1i:L2:L3 ONLINE MAXMHZ MINMHZ MHZ"]
+    cpu_id = 0
+    for core in range(16):                                   # 8 P-cores with two threads, 8 E-cores with one
+        for _ in range(2 if core < 8 else 1):
+            rows.append(f"{cpu_id} 0 0 {core} {core}:{core}:{core}:0 yes 5400.0 800.0 800.0"); cpu_id += 1
+    (run / "inventory" / "lscpu-e.txt").write_text("\n".join(rows) + "\n")
+    dev = ("Memory Device\n\tSize: 16 GB\n\tLocator: {loc}\n\tBank Locator: Controller0-Channel{ch}\n\tType: {mem}\n"
+           "\tSpeed: 5600 MT/s\n\tRank: 1\n\tConfigured Memory Speed: {mts} MT/s\n\n")
+    text = "".join(dev.format(loc=f"DIMM {i}", ch="AB"[i % 2], mem=mem, mts=mts) for i in range(ndimm))
+    text += "Memory Device\n\tSize: No Module Installed\n\tLocator: DIMM 9\n\n"
+    (run / "inventory" / "dmidecode.txt").write_text(text)
+    spd = bytearray(1024); spd[4] = 0x04                     # 16 Gb dies
+    spd[30:32] = (16000).to_bytes(2, "little")               # tAAmin 16.0 ns
+    (run / "inventory" / "spd-0-0050.hex").write_text("# spd5118, 1024 bytes, serial bytes zeroed\n" +
+        "\n".join(spd[i:i + 16].hex(" ") for i in range(0, 1024, 16)) + "\n")
+    return run
+
+
+def test_intel_generations():
+    from app.hw import intel_client as I
+    assert I.generation("13th Gen Intel(R) Core(TM) i7-13700K") == (13, "i7", 13700)
+    assert I.generation("Intel(R) Core(TM) i7-6700K CPU @ 4.00GHz") == (6, "i7", 6700)
+    assert I.generation("Intel(R) Core(TM) i9-9900K CPU @ 3.60GHz")[0] == 9
+    assert I.generation("AMD Ryzen 7 5800X 8-Core Processor") is None
+    assert I.memory_support(13, "i5", 13400) == dict(ddr5=4800, ddr4=3200)            # below the 13600: 4800
+    assert I.memory_support(10, "i5", 10400) == dict(ddr4=2666)
+    s = I.spec("Intel(R) Core(TM) i7-8700K CPU @ 3.70GHz", {"p": 6, "e": 0})
+    assert s["cores"] == {"core": 6} and s["channels"] == 2 and s["arch"] == "coffeelake-s"
+    assert I.spec("12th Gen Intel(R) Core(TM) i5-12400", {"p": 6, "e": 0})["cores"] == {"p": 6}
+
+
+def test_inventory_cpu_and_memory(tmp_path):
+    run = cpu_run(tmp_path)
+    assert P.core_counts(run) == {"p": 8, "e": 8}
+    assert [d["mts"] for d in P.dimms(run)] == [5600, 5600]                            # the empty slot left out
+    assert P.spd_timing(run)["taa_ns"] == 16.0 and P.spd_timing(run)["density_gbit"] == 16
+    m, groups, params, why = P.cpu_memory_machine(run)
+    assert why is None and params["channels"] == 2 and params["cl"] == 45 and params["mem"] == "DDR5-5600"
+    preds, unsup = P.predict(run, [dict(key="mlc/idle_latency", value=64.0, unit="ns"),
+                                   dict(key="mlc/max_bandwidth/all_reads", value=89.0, unit="GB/s"),
+                                   dict(key="mlc/max_bandwidth/3to1_rw", value=80.0, unit="GB/s")])
+    by = {p["key"]: p["value"] for p in preds}
+    assert 70 < by["mlc/idle_latency"] < 100                   # 16 ns CAS + the global fixed term
+    assert 60 < by["mlc/max_bandwidth/all_reads"] < 89.6        # below the 2 x 44.8 GB/s peak
+    assert "write traffic" in unsup[0]["reason"]
+
+
+def test_cpu_memory_reasons(tmp_path):
+    run = cpu_run(tmp_path)
+    (run / "inventory" / "dmidecode.txt").write_text("")
+    assert "no DIMM data" in P.cpu_memory_machine(run)[3]
+    run2 = cpu_run(tmp_path / "b", cpu="AMD Ryzen 5 3600 6-Core Processor")
+    assert "CPU not in rigsim's catalogue" in P.cpu_memory_machine(run2)[3]
+    one = cpu_run(tmp_path / "c", ndimm=1)
+    assert P.cpu_memory_machine(one)[2]["channels"] == 1
+
+
+
+def test_channel_names_boards_use(tmp_path):
+    run = cpu_run(tmp_path)
+    text = (run / "inventory" / "dmidecode.txt").read_text()
+    for a, b in (("DDR5-A2", "DDR5-B2"), ("DIMM_A1", "DIMM_B1")):
+        t = text.replace("Bank Locator: Controller0-ChannelA", "Bank Locator: BANK 0").replace(
+            "Bank Locator: Controller0-ChannelB", "Bank Locator: BANK 0").replace("DIMM 0", a).replace("DIMM 1", b)
+        (run / "inventory" / "dmidecode.txt").write_text(t)
+        assert P.cpu_memory_machine(run)[2]["channels_from"] == "locators"
