@@ -243,15 +243,19 @@ def predict(run: Path, measurements: list[dict]) -> tuple[list[dict], list[dict]
                                         + ", ".join(f"{k} {v:.0%}" for k, v in r["share"].items())))
             elif parts[0] == "llama-bench":
                 unsup.append(dict(key=key, reason=f"llama.cpp {parts[1]} backend not modelled yet"))
-            elif parts[0] == "gpu-vram" and len(parts) == 3 and parts[2] == "read":
+            elif parts[0] == "gpu-vram" and len(parts) == 3 and parts[2] in ("read", "write", "copy"):
                 g = gpus.get(parts[1])
                 mid = g and catalogue_id(g["name"], g["mib"])
                 if not mid:
                     unsup.append(dict(key=key, reason="GPU not in rigsim's catalogue" + (f": {g['name']}" if g else ""))); continue
                 m = machine_for(run, g, mid)
                 r = execute(m, "gpu0", [Op("stream read", "memory", bytes=4e9)], cuda.RUNTIME)
+                # the probe counts the bytes moved (a copy: read + written); the model's VRAM is one shared bus for
+                # both directions, read and write alike — the turnaround between them is not modelled (not on spec
+                # sheets), so write and copy get the read figure
+                note = "" if parts[2] == "read" else "; read and write treated alike (bus turnaround not modelled)"
                 preds.append(dict(key=key, value=r.vram_bps / 1e9, unit="GB/s", calibration=False,
-                                  basis=f"{mid}: {r.basis['vram']}"))
+                                  basis=f"{mid}: {r.basis['vram']}{note}"))
             elif key in ("mlc/idle_latency", "mlc/max_bandwidth/all_reads"):
                 if cpu_m is None:
                     cpu_m = cpu_memory_machine(run)

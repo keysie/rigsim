@@ -160,3 +160,12 @@ def test_ryzen_predictions(tmp_path):
     assert 30 < preds[0]["value"] < 51.2                                             # below 2 x 25.6 GB/s peak
     apu = amd_run(tmp_path / "apu", "AMD Ryzen 5 5600G with Radeon Graphics", cores=6, l3=1)
     assert P.cpu_memory_machine(apu)[2]["cpu"] == "cezanne" and P.cpu_memory_machine(apu)[2]["fclk_mhz"] is None
+
+
+
+def test_vram_write_and_copy(tmp_path):
+    run = fake_run(tmp_path)
+    preds, unsup = P.predict(run, [dict(key=f"gpu-vram/gpu0/{op}", value=1.0, unit="GB/s", conditions={})
+                                   for op in ("read", "write", "copy")])
+    assert not unsup and len({round(p["value"], 3) for p in preds}) == 1
+    assert "bus turnaround not modelled" in next(p for p in preds if p["key"].endswith("copy"))["basis"]
