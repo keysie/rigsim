@@ -50,12 +50,17 @@ class GpuDevice:
         c = self._curve("sm_clock")
         if c:
             return c[0] * 1e6, c[1]
+        if self.spec.get("fixed_clock_mhz"):               # an integrated GPU: its clock as the run recorded it
+            return self.spec["fixed_clock_mhz"] * 1e6, "the run's own clock record (integrated GPU)"
         return spec_clock_mhz(self.spec, self.power_limit_w, self.load_class) * 1e6, "spec-sheet law (global constants)"
 
     def vram_bps(self) -> tuple[float, str]:
         c = self._curve("vram_bandwidth")
         if c:
             return c[0] * 1e9, c[1]
+        if self.spec.get("integrated"):
+            return (self.spec["mem_controllers"] * channel_bandwidth_gbs(self.spec) * 1e9,
+                    "system memory: channels x data rate x JEDEC DRAM efficiency")
         how = "spec x global VRAM efficiency" + ("" if K.VRAM_EFFICIENCY_MEASURED else " (unmeasured)")
         return self.spec["mem_controllers"] * channel_bandwidth_gbs(self.spec) * 1e9 * K.VRAM_EFFICIENCY, how
 

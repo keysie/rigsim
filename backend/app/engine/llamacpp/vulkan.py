@@ -30,24 +30,34 @@ def _op(name, kind, path, **kw):
               cf.value, mf.value, factor_basis=f"vulkan {path}: compute {cf.basis}; memory {mf.basis}")
 
 
-def matmul(name: str, w_type: str, cols: int, rows: int, n: int, w_bytes: float):
+# Without matrix units (Intel Gen9 / Xe-LP iGPUs) the matrix and attention shaders run on the vector units in fp16.
+VECTOR = {"mm_coopmat": ("mm_vector", "fp16"), "fa_coopmat": ("fa_vector", "fp16")}
+FACTORS.update({"mm_vector": dict(compute=cuda.Factor(), memory=cuda.Factor()),
+                "fa_vector": dict(compute=cuda.Factor(), memory=cuda.Factor())})
+
+
+def matmul(name: str, w_type: str, cols: int, rows: int, n: int, w_bytes: float, matrix_units: bool = True):
     ops = 2.0 * n * cols * rows
     b = w_bytes + n * cols * cuda.ACT_BYTES + n * rows * cuda.ACT_BYTES
     if n <= MMV_MAX_COLS:
         return _op(name, "matmul", "mmv", ops=ops, bytes_=b, kernels=1)
-    return _op(name, "matmul", "mm_coopmat", op_class="fp16_tensor_fp32acc", ops=ops, bytes_=b, kernels=1)
+    path, cls = ("mm_coopmat", "fp16_tensor_fp32acc") if matrix_units else VECTOR["mm_coopmat"]
+    return _op(name, "matmul", path, op_class=cls, ops=ops, bytes_=b, kernels=1)
 
 
-def attention(m: Model, n: int, depth: int):
+def attention(m: Model, n: int, depth: int, matrix_units: bool = True):
     a = cuda.attention(m, n, depth)
     if n == 1:
         return _op("attention", "attention", "fa_vec", ops=a.ops, bytes_=a.bytes)
-    return _op("attention", "attention", "fa_coopmat", op_class="fp16_tensor_fp32acc", ops=a.ops, bytes_=a.bytes)
+    path, cls = ("fa_coopmat", "fp16_tensor_fp32acc") if matrix_units else VECTOR["fa_coopmat"]
+    return _op("attention", "attention", path, op_class=cls, ops=a.ops, bytes_=a.bytes)
 
 
 def step(machine: Machine, gid: str, m: Model, n: int, depth: int, n_outputs: int = 1) -> StepResult:
-    return execute(machine, gid, cuda.forward(m, n, depth, n_outputs, matmul=matmul, attention=attention), RUNTIME,
-                   graphs=False)
+    mu = machine.devices[gid].spec.get("matrix_units", True)
+    mm = lambda *a: matmul(*a, matrix_units=mu)
+    at = lambda *a: attention(*a, matrix_units=mu)
+    return execute(machine, gid, cuda.forward(m, n, depth, n_outputs, matmul=mm, attention=at), RUNTIME, graphs=False)
 
 
 def llama_bench(machine: Machine, gid: str, m: Model, test: str, n_ubatch: int = 512) -> dict:

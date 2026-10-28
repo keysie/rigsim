@@ -37,7 +37,7 @@ def test_predictions_and_reasons(tmp_path):
     assert 100 < by["llama-bench/cuda/gpu0/llama-2-7b-q4_0/tg128"]["value"] < 200
     assert 600 < by["gpu-vram/gpu0/read"]["value"] < 800 and all(p["calibration"] is False for p in preds)
     reasons = {u["key"]: u["reason"] for u in unsup}
-    assert "not a catalogued NVIDIA GPU" in reasons["llama-bench/vulkan/dev0/llama-2-7b-q4_0/tg128"]
+    assert "not a catalogued GPU" in reasons["llama-bench/vulkan/dev0/llama-2-7b-q4_0/tg128"]
     assert "model architecture not described" in reasons["llama-bench/cuda/gpu0/mistral-7b-q4_0/tg128"]
     assert "CPU not in rigsim's catalogue" in reasons["mlc/idle_latency"]
 
@@ -179,9 +179,28 @@ def test_vulkan_engine_by_pci(tmp_path):
                  conditions=dict(pci="0000:00:02.0", gpu="Intel(R) Graphics (RPL-S)"))]
     preds, unsup = P.predict(run, meas)
     assert len(preds) == 1 and 100 < preds[0]["value"] < 200 and "Vulkan engine" in preds[0]["basis"]
-    assert "not a catalogued NVIDIA GPU (Intel(R) Graphics (RPL-S))" in unsup[0]["reason"]
+    assert "not a catalogued GPU (Intel(R) Graphics (RPL-S))" in unsup[0]["reason"]
     from app.engine.llamacpp import vulkan
     from app.engine.model import from_config
     ops = vulkan.cuda.forward(from_config("tinyllama-1.1b", "q4_0"), 1, 0, matmul=vulkan.matmul, attention=vulkan.attention)
     q = next(o for o in ops if o.name == "blk.0.attn_q")
     assert q.factor_basis.startswith("vulkan mmv") and q.kernels == 1         # dequantising mat-vec, no quantise kernel
+
+
+def test_intel_igpu_from_the_run(tmp_path):
+    from app.hw import intel_igpu as I
+    assert I.product("Intel Corporation Raptor Lake-S GT1 [UHD Graphics 770] [8086:a780] (rev 04)") == "UHD Graphics 770"
+    assert I.product("Intel Corporation HD Graphics 630") == "HD Graphics 630" and I.product("NVIDIA GeForce RTX 3080") is None
+    run = cpu_run(tmp_path)
+    hw = json.loads((run / "run.json").read_text())
+    hw["hardware"]["gpus"] = ["Intel Corporation Raptor Lake-S GT1 [UHD Graphics 770] [8086:a780] (rev 04)"]
+    (run / "run.json").write_text(json.dumps(hw))
+    (run / "samples-drm.jsonl").write_text("".join(json.dumps(dict(t=i, pci="0000:00:02.0", gt_mhz=v)) + "\n"
+                                                    for i, v in enumerate([300, 1600, 1550, 0])))
+    assert P.igpu_clock_mhz(run, "0000:00:02.0") == 1600
+    meas = [dict(key="llama-bench/vulkan/dev1/llama-2-7b-q4_0/tg128", value=5.8, unit="tok/s",
+                 conditions=dict(pci="0000:00:02.0", gpu="Intel(R) Graphics (RPL-S)"))]
+    preds, unsup = P.predict(run, meas)
+    assert not unsup and "32 EUs at 1600 MHz, system memory" in preds[0]["basis"]
+    spec = __import__("app.hw.gpus", fromlist=["GPUS"]).GPUS[next(k for k in __import__("app.hw.gpus", fromlist=["GPUS"]).GPUS if k.startswith("intel-uhd-graphics-770@ddr5-5600"))]
+    assert spec["mem_controllers"] == 4 and spec["matrix_units"] is False and spec["sms"] == 32

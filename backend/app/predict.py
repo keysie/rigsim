@@ -20,7 +20,7 @@ from pathlib import Path
 
 from .engine.llamacpp import cuda, vulkan
 from .engine.model import ARCHS, FILE_TYPES, from_config
-from .hw import amd_client, arch, intel_client
+from .hw import amd_client, arch, intel_client, intel_igpu
 from .hw.cpus import lookup as cpu_lookup
 from .hw.execute import Op, execute
 from .hw.gpu import add_gpu
@@ -219,6 +219,44 @@ def cpu_memory_machine(run: Path):
     return m, groups, params, None
 
 
+def igpu_clock_mhz(run: Path, pci: str) -> float | None:
+    """The highest graphics clock sampled for this device while the run measured (samples-drm.jsonl)."""
+    f = run / "samples-drm.jsonl"
+    best = None
+    for line in (f.read_text(errors="replace").splitlines() if f.exists() else []):
+        try:
+            r = json.loads(line)
+        except ValueError:
+            continue
+        if r.get("pci", "").lower().endswith(pci.lower()[-7:]) and r.get("gt_mhz"):
+            best = max(best or 0, float(r["gt_mhz"]))
+    return best
+
+
+def igpu_machine(run: Path, pci: str, name: str):
+    """(machine, catalogue key, why-not) for an Intel integrated GPU, with the machine's memory."""
+    if not intel_igpu.product(name):
+        return None, None, f"GPU not in rigsim's catalogue: {name or pci}"
+    clock = igpu_clock_mhz(run, pci)
+    if not clock:
+        return None, None, "no graphics clock recorded for this iGPU (samples-drm.jsonl)"
+    _, _, params, why = cpu_memory_machine(run)
+    if why:
+        return None, None, f"memory of the machine not identified: {why}"
+    t, mts = params["mem"].split("-")
+    key = intel_igpu.register(name, clock, t, float(mts), params["channels"], params.get("density_gbit"))
+    m = Machine(); m.add(Router("host"))
+    add_gpu(m, "gpu0", key, "host", slot_gen=4, slot_lanes=16)
+    return m, key, None
+
+
+def gpu_names(run: Path) -> list[str]:
+    try:
+        return json.loads((run / "run.json").read_text()).get("hardware", {}).get("gpus", [])
+    except (OSError, ValueError):
+        return []
+
+
 def predict(run: Path, measurements: list[dict]) -> tuple[list[dict], list[dict]]:
     gpus = {f"gpu{g['index']}": g for g in nvidia_gpus(run)}
     preds, unsup = [], []
@@ -248,7 +286,21 @@ def predict(run: Path, measurements: list[dict]) -> tuple[list[dict], list[dict]
                 mid = g and catalogue_id(g["name"], g["mib"])
                 mdl = model_for(parts[3])
                 if not g:
-                    unsup.append(dict(key=key, reason=f"Vulkan device not a catalogued NVIDIA GPU ({c.get('gpu') or pci or 'unknown'})")); continue
+                    intel = next((n for n in gpu_names(run) if "Intel" in n and intel_igpu.product(n)), "")
+                    if not (pci and intel and pci.endswith("00:02.0")):
+                        unsup.append(dict(key=key, reason=f"Vulkan device not a catalogued GPU ({c.get('gpu') or pci or 'unknown'})")); continue
+                    if not mdl:
+                        unsup.append(dict(key=key, reason=f"model architecture not described: {parts[3]}")); continue
+                    m_i, ik, why = igpu_machine(run, pci, intel)
+                    if why:
+                        unsup.append(dict(key=key, reason=why)); continue
+                    r = vulkan.llama_bench(m_i, "gpu0", mdl, parts[4])
+                    spec = m_i.devices["gpu0"].spec
+                    preds.append(dict(key=key, value=r["tokens_per_s"], unit="tok/s", calibration=False,
+                                      basis=f"llama.cpp Vulkan engine, {ik} ({spec['sms']} EUs at {spec['fixed_clock_mhz']:.0f} MHz, "
+                                            f"system memory), kernel factors unmeasured; "
+                                            + ", ".join(f"{k} {v:.0%}" for k, v in r["share"].items())))
+                    continue
                 if not mid:
                     unsup.append(dict(key=key, reason=f"GPU not in rigsim's catalogue: {g['name']}")); continue
                 if not mdl:
