@@ -6,7 +6,10 @@ predictions/README.md). Run from backend/:
 The machine is built from the run's own inventory: GPUs by nvidia-smi name and memory size (catalogue: hw/gpus.py),
 power limits from nvidia-smi, PCIe link from inventory/pcie.json. What the model covers is predicted; everything
 else comes back as unsupported with the reason. No measurement of these runs went into rigsim's constants, so no
-prediction is marked as calibration."""
+prediction is marked as calibration. CPU memory (MLC idle latency, all-core read bandwidth): the CPU from the
+catalogue (cpus.py; Intel Core 6th-13th gen from intel_client.py, AMD Ryzen 1000-7000 from amd_client.py, both
+with the inventory's core counts), the memory from
+dmidecode (type, configured speed, populated channels) and the SPD dump (tAA, die density)."""
 from __future__ import annotations
 
 import argparse
@@ -17,6 +20,8 @@ from pathlib import Path
 
 from .engine.llamacpp import cuda
 from .engine.model import ARCHS, FILE_TYPES, from_config
+from .hw import amd_client, arch, intel_client
+from .hw.cpus import lookup as cpu_lookup
 from .hw.execute import Op, execute
 from .hw.gpu import add_gpu
 from .hw.gpus import GPUS
@@ -98,9 +103,126 @@ def model_for(stem: str):
     return from_config(MODELS[m.group(1)], m.group(2))
 
 
+# --- CPU and memory from the inventory ------------------------------------------------------------------------------
+def cpu_name(run: Path) -> str:
+    try:
+        return json.loads((run / "run.json").read_text()).get("hardware", {}).get("cpu", "")
+    except (OSError, ValueError):
+        return ""
+
+
+def core_counts(run: Path) -> dict[str, int]:
+    """Cores by type from `lscpu -e`: a core with two hardware threads is a P-core (Hyper-Threading), one thread an
+    E-core — on hybrid generations; spec() folds them into one type on the others."""
+    f = run / "inventory" / "lscpu-e.txt"
+    per_core: dict[str, int] = {}
+    for line in (f.read_text(errors="replace").splitlines()[1:] if f.exists() else []):
+        cols = line.split()
+        if len(cols) >= 4 and cols[0].isdigit():
+            key = f"{cols[2]}:{cols[3]}"                  # socket:core
+            per_core[key] = per_core.get(key, 0) + 1
+    p = sum(1 for n in per_core.values() if n >= 2)
+    return {"p": p, "e": len(per_core) - p} if per_core else {}
+
+
+def lscpu_topology(run: Path) -> dict:
+    """Physical cores and L3 slices (core complexes) from `lscpu -e` (column L1d:L1i:L2:L3)."""
+    f = run / "inventory" / "lscpu-e.txt"
+    cores, l3 = set(), set()
+    for line in (f.read_text(errors="replace").splitlines()[1:] if f.exists() else []):
+        cols = line.split()
+        if len(cols) >= 5 and cols[0].isdigit():
+            cores.add(f"{cols[2]}:{cols[3]}")
+            l3.add(f"{cols[2]}:{cols[4].split(':')[-1]}")
+    return dict(cores=len(cores), l3_slices=len(l3))
+
+
+def dimms(run: Path) -> list[dict]:
+    """Populated memory devices from dmidecode -t memory: type, configured speed, size, locators, rank."""
+    f = run / "inventory" / "dmidecode.txt"
+    out, cur = [], None
+    for line in (f.read_text(errors="replace").splitlines() if f.exists() else []):
+        if line.strip() == "Memory Device":
+            cur = {}; out.append(cur); continue
+        if cur is None or ":" not in line:
+            continue
+        k, _, v = line.strip().partition(":")
+        cur[k.strip()] = v.strip()
+    res = []
+    for d in out:
+        size = d.get("Size", "")
+        if not size or "No Module" in size or "Not Installed" in size:
+            continue
+        sp = re.search(r"(\d+)", d.get("Configured Memory Speed", "") or d.get("Speed", ""))
+        res.append(dict(type=d.get("Type", ""), mts=int(sp.group(1)) if sp else None, size=size,
+                        locator=d.get("Locator", ""), bank=d.get("Bank Locator", ""), rank=d.get("Rank", "")))
+    return res
+
+
+def spd_timing(run: Path) -> dict:
+    """From the first SPD dump (inventory/spd-*.hex, serial bytes zeroed): tAAmin (ns) and die density (Gb), JEDEC
+    base-profile values (DDR4: bytes 24 + 123, density byte 4 bits 3:0; DDR5: bytes 30-31 in ps, byte 4 bits 4:0)."""
+    for f in sorted((run / "inventory").glob("spd-*.hex")):
+        lines = [l for l in f.read_text().splitlines() if l and not l.startswith("#")]
+        b = bytes.fromhex("".join(lines).replace(" ", ""))
+        head = f.read_text().splitlines()[0]
+        try:
+            if "spd5118" in head and len(b) > 31:
+                return dict(taa_ns=int.from_bytes(b[30:32], "little") / 1000,
+                            density_gbit={1: 4, 2: 8, 3: 12, 4: 16, 5: 24, 6: 32, 7: 48, 8: 64}.get(b[4] & 0x1F), source=f.name)
+            if "ee1004" in head and len(b) > 123:
+                ftb = b[123] - 256 if b[123] > 127 else b[123]
+                return dict(taa_ns=b[24] * 0.125 + ftb / 1000,
+                            density_gbit={4: 4, 5: 8, 6: 16, 7: 32}.get(b[4] & 0x0F), source=f.name)
+        except (ValueError, IndexError):
+            continue
+    return {}
+
+
+def cpu_memory_machine(run: Path):
+    """(machine, core groups, parameters, why-not) for the CPU and its memory, from the run's inventory."""
+    name = cpu_name(run)
+    topo = lscpu_topology(run)
+    spec = (cpu_lookup(name) or intel_client.spec(name, core_counts(run))
+            or amd_client.spec(name, topo["cores"], topo["l3_slices"]))
+    if not spec:
+        return None, None, None, f"CPU not in rigsim's catalogue: {name or 'unknown'}"
+    ds = dimms(run)
+    if not ds:
+        return None, None, None, "no DIMM data in the inventory (stick before 0.11.0: dmidecode read nothing)"
+    t = ds[0]["type"].lower()
+    mts = min(d["mts"] for d in ds if d["mts"]) if any(d["mts"] for d in ds) else None
+    if t not in ("ddr4", "ddr5") or not mts:
+        return None, None, None, f"memory not identified (type {ds[0]['type']!r}, speed {mts})"
+    def channel(d: dict) -> str | None:
+        """The channel letter a board names in its locators: 'Controller0-ChannelA', 'CHANNEL B', 'DDR5-A2', 'DIMM_B1'."""
+        for txt in (d["bank"], d["locator"]):
+            m = re.search(r"(?i)channel\s*([a-d])\b", txt) or re.search(r"(?i)(?:^|[-_ ])([a-d])\d$", txt)
+            if m:
+                return m.group(1).upper()
+        return None
+    chans = {c for c in map(channel, ds) if c}
+    channels = min(spec["channels"], len(chans) if chans else len(ds))
+    spd = spd_timing(run)
+    cl = round(spd["taa_ns"] * mts / 2000) if spd.get("taa_ns") else None
+    fclk = None
+    if spec.get("topology") == "chiplet":
+        fam = amd_client.family(name)
+        fclk = amd_client.fclk_mhz(fam, mts) if fam else None
+        if not fclk:
+            return None, None, None, f"fabric clock rule not documented for {name}"
+    m, groups = arch.build(spec, mts, channels, fclk_mhz=fclk, cl=cl, mem_type=t, density_gbit=spd.get("density_gbit"))
+    params = dict(cpu=spec.get("arch"), cores=spec.get("cores") or {"ccds": spec.get("ccds"), **spec.get("cores_per_ccd", {})},
+                  fclk_mhz=f"{fclk:.0f} (AMD's default rule, not read from the machine)" if fclk else None,
+                  mem=f"{t.upper()}-{mts}", channels=channels,
+                  cl=cl, density_gbit=spd.get("density_gbit"), channels_from="locators" if chans else "DIMM count")
+    return m, groups, params, None
+
+
 def predict(run: Path, measurements: list[dict]) -> tuple[list[dict], list[dict]]:
     gpus = {f"gpu{g['index']}": g for g in nvidia_gpus(run)}
     preds, unsup = [], []
+    cpu_m = None
     for meas in measurements:
         key, c = meas["key"], meas.get("conditions", {})
         parts = key.split("/")
@@ -130,6 +252,22 @@ def predict(run: Path, measurements: list[dict]) -> tuple[list[dict], list[dict]
                 r = execute(m, "gpu0", [Op("stream read", "memory", bytes=4e9)], cuda.RUNTIME)
                 preds.append(dict(key=key, value=r.vram_bps / 1e9, unit="GB/s", calibration=False,
                                   basis=f"{mid}: {r.basis['vram']}"))
+            elif key in ("mlc/idle_latency", "mlc/max_bandwidth/all_reads"):
+                if cpu_m is None:
+                    cpu_m = cpu_memory_machine(run)
+                m, groups, params, why = cpu_m
+                if why:
+                    unsup.append(dict(key=key, reason=why)); continue
+                basis = ", ".join(f"{k} {v}" for k, v in params.items() if v is not None)
+                if key == "mlc/idle_latency":
+                    cas = "CAS + fixed term" if params["cl"] else "fixed term only (CAS unknown: no SPD dump)"
+                    preds.append(dict(key=key, value=arch.access_s(int(params["mem"].split("-")[1]), params["cl"]) * 1e9,
+                                      unit="ns", calibration=False, basis=f"{cas}; {basis}"))
+                else:
+                    preds.append(dict(key=key, value=arch.all_cores_read_gbs(m, groups), unit="GB/s", calibration=False,
+                                      basis=f"block model, JEDEC DRAM efficiency; {basis}"))
+            elif parts[0] == "mlc":
+                unsup.append(dict(key=key, reason="write traffic not modelled yet (reads only)"))
             else:
                 unsup.append(dict(key=key, reason="not modelled yet"))
         except Exception as e:                       # one value failing must not lose the others
