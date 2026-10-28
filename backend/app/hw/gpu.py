@@ -31,6 +31,7 @@ class GpuDevice:
     power_limit_w: float
     curves: dict[tuple[str, str], PowerCurve] = field(default_factory=dict)   # user overrides: (primitive, class)
     load_class: str = "compute"
+    memory: str = ""                  # the storage its data lives in: '<id>.vram', or the system's 'ram' (iGPU)
 
     @property
     def spec(self) -> dict:
@@ -59,8 +60,7 @@ class GpuDevice:
         if c:
             return c[0] * 1e9, c[1]
         if self.spec.get("integrated"):
-            return (self.spec["mem_controllers"] * channel_bandwidth_gbs(self.spec) * 1e9,
-                    "system memory: channels x data rate x JEDEC DRAM efficiency")
+            return 0.0, "the system's memory: a flow through the machine's graph"
         how = "spec x global VRAM efficiency" + ("" if K.VRAM_EFFICIENCY_MEASURED else " (unmeasured)")
         return self.spec["mem_controllers"] * channel_bandwidth_gbs(self.spec) * 1e9 * K.VRAM_EFFICIENCY, how
 
@@ -86,6 +86,24 @@ def add_gpu(m: Machine, gid: str, model: str, slot_router: str, *, slot_gen: int
     m.interleave(f"{gid}.vram", [f"{gid}.vram{i}" for i in range(n)])
     gen, lanes = min(spec["pcie_gen"], slot_gen), min(spec["pcie_lanes"], slot_lanes)
     m.connect(Link(f"{gid}.pcie", f"{gid}.copy", slot_router, pcie_bps(gen, lanes), latency_s=0.0, duplex=True))
+    dev.memory = f"{gid}.vram"
+    m.devices = getattr(m, "devices", {})
+    m.devices[gid] = dev
+    set_load_class(m, gid, dev.load_class)
+    return dev
+
+
+def add_igpu(m: Machine, gid: str, model: str, host_router: str, memory: str = "ram") -> GpuDevice:
+    """An integrated GPU: its execution units on the CPU package's router, reading the SAME memory as the cores
+    (`memory`, the package's interleaved channels) — so CPU and iGPU share its bandwidth in the graph. The graphics
+    interface to the ring is not documented: non-binding."""
+    spec = GPUS[model]
+    dev = GpuDevice(gid, model, spec["tdp_w"])
+    m.add(Compute(f"{gid}.sm", clock_hz=0.0, ops_per_clock=dict(spec["ops_per_clk_per_sm"]), count=spec["sms"]))
+    m.add(Router(f"{gid}.gti"))
+    m.connect(Link(f"{gid}.eu_bus", f"{gid}.sm", f"{gid}.gti", None))
+    m.connect(Link(f"{gid}.ring", f"{gid}.gti", host_router, None))
+    dev.memory = memory
     m.devices = getattr(m, "devices", {})
     m.devices[gid] = dev
     set_load_class(m, gid, dev.load_class)
@@ -101,7 +119,8 @@ def set_load_class(m: Machine, gid: str, load_class: str) -> dict:
     clock, how_c = dev.sm_clock_hz()
     bw, how_b = dev.vram_bps()
     m.nodes[f"{gid}.sm"].clock_hz = clock
-    n = dev.spec["mem_controllers"]
-    for i in range(n):
-        m.nodes[f"{gid}.vram{i}"].bandwidth_bps = bw / n
+    if not dev.spec.get("integrated"):                # an iGPU's memory belongs to the system: not the card's to set
+        n = dev.spec["mem_controllers"]
+        for i in range(n):
+            m.nodes[f"{gid}.vram{i}"].bandwidth_bps = bw / n
     return dict(load_class=load_class, sm_clock_hz=clock, sm_clock_basis=how_c, vram_bps=bw, vram_basis=how_b)

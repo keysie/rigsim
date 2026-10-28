@@ -58,28 +58,30 @@ def domain(spec: dict) -> dict:
     return spec
 
 
-def build(spec: dict | None, mts: float, channels: int, eff_dram: float | None = None, fclk_mhz: float | None = None,
-          eff_link: float | None = None, core_link_bps: float | None = None, cl: int | None = None,
-          mem_type: str | None = None, density_gbit: int | None = None, trefi_ns: float | None = None,
-          trfc_ns: float | None = None) -> tuple[Machine, list[str]]:
-    """Returns the machine and the core groups that read. Unknown CPU: one generic core group, monolithic.
-    Efficiencies default to the global constants. `core_link_bps`: what one core sustains (its own link to its
-    router); None = from the documented miss queue (Little's law) where sourced, else not identified."""
+def add_cpu(m: Machine, spec: dict | None, mts: float, channels: int, eff_dram: float | None = None,
+            fclk_mhz: float | None = None, eff_link: float | None = None, core_link_bps: float | None = None,
+            cl: int | None = None, mem_type: str | None = None, density_gbit: int | None = None,
+            trefi_ns: float | None = None, trfc_ns: float | None = None) -> tuple[str, list[str]]:
+    """Adds the CPU package and its memory channels to an existing machine. Returns the package's I/O router (where
+    PCIe root ports and an integrated GPU attach: 'pkg', or 'iod' on chiplet parts) and the core groups. Unknown
+    CPU: one generic core group, monolithic. Efficiencies default to the global constants. `core_link_bps`: what one
+    core sustains (its own link to its router); None = from the documented miss queue (Little's law) where sourced,
+    else not identified."""
     if eff_dram is None:
         t = (mem_type or "").lower()
         eff_dram = (dram.efficiency(t, mts, density_gbit, trefi_ns, trfc_ns)[0] if t in dram.JEDEC
                     else K.DRAM_READ_EFFICIENCY)
     eff_link = K.CHIPLET_LINK_EFFICIENCY if eff_link is None else eff_link
     lat = access_s(mts, cl)
-    m = Machine()
     groups: list[str] = []
     if spec and spec["topology"] == "chiplet" and fclk_mhz:
-        m.add(Router("iod"))
-        _channels(m, "iod", mts, channels, eff_dram, cl, mem_type)
+        io = "iod"
+        m.add(Router(io))
+        _channels(m, io, mts, channels, eff_dram, cl, mem_type)
         for d in range(spec["ccds"]):
             r = f"ccd{d}"
             m.add(Router(r))
-            m.connect(Link(f"ifop{d}", r, "iod", spec["ccd_read_bytes_per_fclk"] * fclk_mhz * 1e6 * eff_link, duplex=False))
+            m.connect(Link(f"ifop{d}", r, io, spec["ccd_read_bytes_per_fclk"] * fclk_mhz * 1e6 * eff_link, duplex=False))
             for t, n in spec["cores_per_ccd"].items():
                 g = f"{r}.{t}"
                 m.add(Compute(g, clock_hz=0.0, count=n))
@@ -87,13 +89,25 @@ def build(spec: dict | None, mts: float, channels: int, eff_dram: float | None =
                 m.connect(Link(f"{g}.link", g, r, bps, per_unit=True))
                 groups.append(g)
     else:
-        m.add(Router("pkg"))
-        _channels(m, "pkg", mts, channels, eff_dram, cl, mem_type)
+        io = "pkg"
+        m.add(Router(io))
+        _channels(m, io, mts, channels, eff_dram, cl, mem_type)
         for t, n in ((spec or {}).get("cores") or {"generic": 8}).items():
             m.add(Compute(t, clock_hz=0.0, count=n))
             bps = core_link_bps if core_link_bps is not None else core_link_from_queue(spec, t, lat)
-            m.connect(Link(f"{t}.link", t, "pkg", bps, per_unit=True))
+            m.connect(Link(f"{t}.link", t, io, bps, per_unit=True))
             groups.append(t)
+    return io, groups
+
+
+def build(spec: dict | None, mts: float, channels: int, eff_dram: float | None = None, fclk_mhz: float | None = None,
+          eff_link: float | None = None, core_link_bps: float | None = None, cl: int | None = None,
+          mem_type: str | None = None, density_gbit: int | None = None, trefi_ns: float | None = None,
+          trfc_ns: float | None = None) -> tuple[Machine, list[str]]:
+    """A machine holding only the CPU and its memory (the yardsticks use this). Returns it and the core groups."""
+    m = Machine()
+    _, groups = add_cpu(m, spec, mts, channels, eff_dram, fclk_mhz, eff_link, core_link_bps, cl, mem_type,
+                        density_gbit, trefi_ns, trfc_ns)
     return m, groups
 
 

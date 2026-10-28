@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 
 from .gpu import set_load_class
 from .loadclass import classify
-from .machine import Machine
+from .machine import Machine, Read
 from .rates import achievable, launch_s
 
 
@@ -69,9 +69,14 @@ def execute(m: Machine, gid: str, ops: list[Op], runtime: str, graphs: bool = Tr
     items = [(o.op_class or "fp32", o.ops if o.op_class else 0.0, o.bytes) for o in ops]
     cls, _ = classify(dev.model, runtime, items)
     st = set_load_class(m, gid, cls)
-    clock, bw = st["sm_clock_hz"], st["vram_bps"]
+    clock = st["sm_clock_hz"]
+    # memory: the device's units reading its memory, solved as a flow through the machine's graph (the card's own
+    # VRAM, or the system's channels an iGPU shares with the cores)
+    flow = m.solve_reads([Read("device", f"{gid}.sm", dev.memory)])["device"]
+    bw = flow["rate_bps"]
     k_s, k_basis = launch_s(dev.model, runtime, graphs)
-    basis = dict(clock=st["sm_clock_basis"], vram=st["vram_basis"], launch=k_basis, rates={})
+    basis = dict(clock=st["sm_clock_basis"], vram=f"{st['vram_basis']}; graph flow {gid}.sm <- {dev.memory}, "
+                 f"bound by {flow['bottleneck']}", launch=k_basis, rates={})
     times = []
     for o in ops:
         tc = 0.0

@@ -201,6 +201,6 @@ def test_intel_igpu_from_the_run(tmp_path):
     meas = [dict(key="llama-bench/vulkan/dev1/llama-2-7b-q4_0/tg128", value=5.8, unit="tok/s",
                  conditions=dict(pci="0000:00:02.0", gpu="Intel(R) Graphics (RPL-S)"))]
     preds, unsup = P.predict(run, meas)
-    assert not unsup and "32 EUs at 1600 MHz, system memory" in preds[0]["basis"]
+    assert not unsup and "(igpu, 0000:00:02.0)" in preds[0]["basis"]
     spec = __import__("app.hw.gpus", fromlist=["GPUS"]).GPUS[next(k for k in __import__("app.hw.gpus", fromlist=["GPUS"]).GPUS if k.startswith("intel-uhd-graphics-770@ddr5-5600"))]
     assert spec["mem_controllers"] == 4 and spec["matrix_units"] is False and spec["sms"] == 32
