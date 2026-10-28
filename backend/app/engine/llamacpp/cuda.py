@@ -80,8 +80,11 @@ def attention(m: Model, n: int, depth: int) -> Op:
     return _op("attention", "attention", "fa_mma", op_class="fp16_tensor_fp32acc", ops=ops, bytes_=kv_bytes + io)
 
 
-def forward(m: Model, n: int, depth: int, n_outputs: int = 1) -> list[Op]:
-    """One forward pass of n tokens after `depth` cached ones; logits for n_outputs tokens."""
+def forward(m: Model, n: int, depth: int, n_outputs: int = 1, matmul=None, attention=None) -> list[Op]:
+    """One forward pass of n tokens after `depth` cached ones; logits for n_outputs tokens. The graph is llama.cpp's
+    and the same on every backend; a backend brings its own matmul and attention kernels (defaults: CUDA's)."""
+    matmul = matmul or globals()["matmul"]
+    attention = attention or globals()["attention"]
     d, kv, q, ff = m.d_model, m.kv_dim, m.heads * m.head_dim, m.ffn
     ops = [elementwise("token embedding", n * d * ACT_BYTES * 2, kernels=2 if m.arch == "gemma" else 1)]
     for i in range(m.layers):

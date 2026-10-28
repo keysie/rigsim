@@ -18,7 +18,7 @@ import re
 import sys
 from pathlib import Path
 
-from .engine.llamacpp import cuda
+from .engine.llamacpp import cuda, vulkan
 from .engine.model import ARCHS, FILE_TYPES, from_config
 from .hw import amd_client, arch, intel_client
 from .hw.cpus import lookup as cpu_lookup
@@ -240,6 +240,22 @@ def predict(run: Path, measurements: list[dict]) -> tuple[list[dict], list[dict]
                 r = cuda.llama_bench(machine_for(run, g, mid), "gpu0", mdl, parts[4])
                 preds.append(dict(key=key, value=r["tokens_per_s"], unit="tok/s", calibration=False,
                                   basis=f"llama.cpp CUDA engine, {mid}, kernel factors unmeasured; "
+                                        + ", ".join(f"{k} {v:.0%}" for k, v in r["share"].items())))
+            elif parts[0] == "llama-bench" and parts[1] == "vulkan":
+                # a Vulkan device is found by its PCI address (vkprobe's list, in the measurement's conditions)
+                pci = c.get("pci", "")
+                g = next((x for x in gpus.values() if pci and x["pci"] == pci), None)
+                mid = g and catalogue_id(g["name"], g["mib"])
+                mdl = model_for(parts[3])
+                if not g:
+                    unsup.append(dict(key=key, reason=f"Vulkan device not a catalogued NVIDIA GPU ({c.get('gpu') or pci or 'unknown'})")); continue
+                if not mid:
+                    unsup.append(dict(key=key, reason=f"GPU not in rigsim's catalogue: {g['name']}")); continue
+                if not mdl:
+                    unsup.append(dict(key=key, reason=f"model architecture not described: {parts[3]}")); continue
+                r = vulkan.llama_bench(machine_for(run, g, mid), "gpu0", mdl, parts[4])
+                preds.append(dict(key=key, value=r["tokens_per_s"], unit="tok/s", calibration=False,
+                                  basis=f"llama.cpp Vulkan engine, {mid}, kernel factors unmeasured; "
                                         + ", ".join(f"{k} {v:.0%}" for k, v in r["share"].items())))
             elif parts[0] == "llama-bench":
                 unsup.append(dict(key=key, reason=f"llama.cpp {parts[1]} backend not modelled yet"))

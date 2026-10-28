@@ -169,3 +169,19 @@ def test_vram_write_and_copy(tmp_path):
                                    for op in ("read", "write", "copy")])
     assert not unsup and len({round(p["value"], 3) for p in preds}) == 1
     assert "bus turnaround not modelled" in next(p for p in preds if p["key"].endswith("copy"))["basis"]
+
+
+def test_vulkan_engine_by_pci(tmp_path):
+    run = fake_run(tmp_path)
+    meas = [dict(key="llama-bench/vulkan/dev0/llama-2-7b-q4_0/tg128", value=140.0, unit="tok/s",
+                 conditions=dict(pci="0000:01:00.0", gpu="NVIDIA GeForce RTX 3080")),
+            dict(key="llama-bench/vulkan/dev1/llama-2-7b-q4_0/tg128", value=5.8, unit="tok/s",
+                 conditions=dict(pci="0000:00:02.0", gpu="Intel(R) Graphics (RPL-S)"))]
+    preds, unsup = P.predict(run, meas)
+    assert len(preds) == 1 and 100 < preds[0]["value"] < 200 and "Vulkan engine" in preds[0]["basis"]
+    assert "not a catalogued NVIDIA GPU (Intel(R) Graphics (RPL-S))" in unsup[0]["reason"]
+    from app.engine.llamacpp import vulkan
+    from app.engine.model import from_config
+    ops = vulkan.cuda.forward(from_config("tinyllama-1.1b", "q4_0"), 1, 0, matmul=vulkan.matmul, attention=vulkan.attention)
+    q = next(o for o in ops if o.name == "blk.0.attn_q")
+    assert q.factor_basis.startswith("vulkan mmv") and q.kernels == 1         # dequantising mat-vec, no quantise kernel
