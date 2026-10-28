@@ -196,10 +196,12 @@ def solve_transfers(m: "Machine", transfers: list[Transfer]) -> dict[str, dict]:
     flows: dict[str, tuple[float, dict, float | None]] = {}
     unidentified: dict[str, list[str]] = {}
     for t in transfers:
-        dst_node = m.nodes.get(t.dst)
         units = 1
-        if isinstance(dst_node, Compute):
-            units = dst_node.count if t.units is None else min(t.units, dst_node.count)
+        for end in (t.dst, t.src):                    # a compute at either end: its units (a read or a write)
+            node = m.nodes.get(end)
+            if isinstance(node, Compute):
+                units = node.count if t.units is None else min(t.units, node.count)
+                break
         srcs = m.interleaved.get(t.src, [t.src])
         dsts = m.interleaved.get(t.dst, [t.dst])
         used: dict[str, float] = {}

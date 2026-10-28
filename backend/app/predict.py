@@ -18,6 +18,7 @@ import re
 import sys
 from pathlib import Path
 
+from .engine import mlc
 from .engine.llamacpp import cuda, vulkan
 from .engine.model import ARCHS, FILE_TYPES, from_config
 from .hw.execute import Op, execute
@@ -89,21 +90,22 @@ def predict(run: Path, measurements: list[dict]) -> tuple[list[dict], list[dict]
                 note = "" if parts[2] == "read" else "; read and write treated alike (bus turnaround not modelled)"
                 preds.append(dict(key=key, value=r.vram_bps / 1e9, unit="GB/s", calibration=False,
                                   basis=f"{s.gpus[gid]['model']}: {r.basis['vram']}{note}"))
-            elif key in ("mlc/idle_latency", "mlc/max_bandwidth/all_reads"):
+            elif parts[0] == "mlc" and (key == "mlc/idle_latency" or (parts[1] == "max_bandwidth" and parts[2] in mlc.MIX)):
                 if s.cpu_why:
                     unsup.append(dict(key=key, reason=s.cpu_why)); continue
                 basis = ", ".join(f"{k} {v}" for k, v in s.cpu.items() if v is not None and k != "name")
                 if key == "mlc/idle_latency":
-                    lat = s.m.idle_latency_s(s.groups[0], "ram")
                     cas = "CAS + fixed term" if s.cpu["cl"] else "fixed term only (CAS unknown: no SPD dump)"
-                    preds.append(dict(key=key, value=lat * 1e9, unit="ns", calibration=False,
-                                      basis=f"graph path {s.groups[0]} -> ram, {cas}; {basis}"))
+                    preds.append(dict(key=key, value=mlc.idle_latency_s(s.m, s.groups[0]) * 1e9, unit="ns",
+                                      calibration=False, basis=f"MLC engine: dependent reads {s.groups[0]} <- ram, "
+                                                               f"path latency in the graph, {cas}; {basis}"))
                 else:
-                    res = s.m.solve_reads([Read(g, g, "ram") for g in s.groups])
-                    preds.append(dict(key=key, value=sum(v["rate_bps"] for v in res.values()) / 1e9, unit="GB/s",
-                                      calibration=False, basis=f"all core groups reading ram in the graph; {basis}"))
+                    note = "" if parts[2] == "all_reads" else f"; {mlc.NOT_IN_GRAPH}"
+                    preds.append(dict(key=key, value=mlc.bandwidth_bps(s.m, s.groups, parts[2]) / 1e9, unit="GB/s",
+                                      calibration=False, basis=f"MLC engine: every core group at once, {parts[2]}; "
+                                                               f"{basis}{note}"))
             elif parts[0] == "mlc":
-                unsup.append(dict(key=key, reason="write traffic not modelled yet (reads only)"))
+                unsup.append(dict(key=key, reason="this MLC test is not modelled yet"))
             else:
                 unsup.append(dict(key=key, reason="not modelled yet"))
         except Exception as e:                       # one value failing must not lose the others

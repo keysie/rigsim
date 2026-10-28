@@ -1,7 +1,9 @@
 """The one way an engine asks the hardware model anything: activities on the machine's graph.
 
-  Transfer  bytes from a storage to a compute (its units read them) or to another storage — a flow through the
-            graph's links, routers and storages, sharing them max-min fairly with every other flow that runs
+  Transfer  bytes from a storage to a compute (its units read them), from a compute to a storage (they write) or
+            between storages — a flow through the graph's links, routers and storages, sharing them max-min fairly
+            with every other flow that runs. With latency=True it first waits the path's idle latency (links,
+            routers, the storage's access time): an access that cannot start before the previous one returned
   Work      operations of one class on a compute node — its units at its clock, at the efficiency the engine's
             kernel reaches (the engine's software fact; the peak is the node's)
   Fixed     a fixed time spent on a node before the step's activities (a kernel launch, a dispatch, a sync)
@@ -27,7 +29,8 @@ class Transfer:
     src: str
     dst: str
     bytes: float
-    units: int | None = None          # receiving units of a compute destination (None: all)
+    units: int | None = None          # units of the compute at either end (None: all)
+    latency: bool = False             # wait the path's idle latency before the bytes flow
 
 
 @dataclass
@@ -99,6 +102,15 @@ def _rates(m: Machine, acts: list, cache: dict) -> dict[str, tuple[float, str]]:
     return out
 
 
+def _latency(m: Machine, a) -> float:
+    """The path's idle latency for a Transfer that waits for it (storage access + links + routers)."""
+    if not (isinstance(a, Transfer) and a.latency):
+        return 0.0
+    if isinstance(m.nodes.get(a.src), Compute):
+        return m.idle_latency_s(a.src, a.dst)
+    return m.idle_latency_s(a.dst, a.src)
+
+
 def _amount(a) -> float:
     return a.bytes if isinstance(a, Transfer) else a.ops
 
@@ -110,14 +122,20 @@ def solve_step(m: Machine, step: Step, cache: dict | None = None) -> StepTime:
     acts = {a.id: a for a in step.concurrent if left[a.id] > 0}
     finish = {a.id: 0.0 for a in step.concurrent if left[a.id] <= 0}
     alone, neck = {}, {}
+    start = {a.id: _latency(m, a) for a in acts.values()}
     for a in acts.values():
         r, b = _rates(m, [a], cache)[a.id]
-        alone[a.id] = _amount(a) / r if r > 0 else float("inf")
+        alone[a.id] = start[a.id] + (_amount(a) / r if r > 0 else float("inf"))
         neck[a.id] = b
     t = 0.0
-    while acts:
-        rates = _rates(m, list(acts.values()), cache)
-        dt = min((left[i] / rates[i][0] if rates[i][0] > 0 else float("inf")) for i in acts)
+    waiting = dict(acts)
+    acts = {}
+    while acts or waiting:
+        for i in [i for i in waiting if start[i] <= t + 1e-18]:
+            acts[i] = waiting.pop(i)
+        rates = _rates(m, list(acts.values()), cache) if acts else {}
+        dt = min([(left[i] / rates[i][0] if rates[i][0] > 0 else float("inf")) for i in acts]
+                 + [start[i] - t for i in waiting])
         if dt == float("inf"):
             raise ValueError(f"step {step.label}: an activity cannot progress (zero rate): "
                              f"{[i for i in acts if rates[i][0] <= 0]}")

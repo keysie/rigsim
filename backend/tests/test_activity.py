@@ -49,3 +49,23 @@ def test_cpu_cores_and_igpu_share_the_system_memory(tmp_path):
     both = solve_step(s.m, Step("cpu+igpu", [Transfer(g, "ram", g, gb) for g in s.groups]
                                  + [Transfer("igpu", "ram", "igpu.sm", gb)]))
     assert both.finish_s[s.groups[0]] > alone_cpu.finish_s[s.groups[0]]                # the iGPU takes its share
+
+
+def test_latency_and_writes():
+    m = small()
+    m.nodes["mem"].access_s = 80e-9
+    m.links["bus"].latency_s = 5e-9
+    r = solve_step(m, Step("chase", [Transfer("x", "mem", "a", 64, units=1, latency=True)]))
+    assert r.seconds == pytest.approx(85e-9 + 64 / 100e9)                         # wait the path, then the line
+    both = solve_step(m, Step("rw", [Transfer("r", "mem", "a", 10e9), Transfer("w", "a", "mem", 10e9)]))
+    assert both.seconds == pytest.approx(0.2)                                     # one simplex bus: shared
+
+
+def test_mlc_engine_on_the_machine(tmp_path):
+    from app.engine import mlc
+    from app.system import build_system
+    from tests.test_system import machine_run
+    s = build_system(machine_run(tmp_path))
+    reads = mlc.bandwidth_bps(s.m, s.groups, "all_reads")
+    assert reads == pytest.approx(mlc.bandwidth_bps(s.m, s.groups, "1to1_rw"))      # no turnaround in the graph yet
+    assert 70e-9 < mlc.idle_latency_s(s.m, s.groups[0]) < 100e-9
