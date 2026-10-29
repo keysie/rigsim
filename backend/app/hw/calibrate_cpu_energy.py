@@ -44,19 +44,49 @@ def uarchs(cpu: str, run: Path) -> list[str]:
     return [u["uarch"]] if u else []
 
 
+def sgemm_at_max(run: Path) -> tuple[float, object] | None:
+    """FMA per second all cores would sustain at their maximum clocks (the graph's core budgets, no power limit)."""
+    from ..system import build_system
+    from .activity import Step, Work, solve_step
+    sy = build_system(run)
+    if sy.cpu_why or not sy.groups or not sy.m.nodes[sy.groups[0]].ops_per_clock:
+        return None
+    for g in sy.groups:
+        sy.m.nodes[g].budget = None
+    acts = [Work(g, g, "", 1e9 * sy.m.nodes[g].count, mix={"fma": 1, "load": INSTR_PER_FMA - 1}, units=sy.m.nodes[g].count)
+            for g in sy.groups]
+    t = solve_step(sy.m, Step("sgemm", acts)).finish_s
+    return sum(1e9 * sy.m.nodes[g].count / t[g] for g in sy.groups), sy
+
+
 def calibrate(runs: list[Path]) -> dict[str, dict]:
+    """Energy per instruction at the maximum clock, with the f^2 law: the measured all-core sgemm sets the clock
+    share s = measured / at-maximum; power = instructions/s at maximum x s x e_ref x s^2 = the specified budget."""
     per: dict[str, list[tuple[float, str]]] = {}
     for run in runs:
         cpu = inv.cpu_name(run)
         watts, _ = (intel_client.package_power_w(cpu) if intel_client.generation(cpu) else amd_client.package_power_w(cpu))
         flops = all_core_sgemm(run)
-        if not watts or not flops:
+        at = sgemm_at_max(run) if watts and flops else None
+        if not at:
             continue
-        e = watts / (flops / FLOPS_PER_FMA * INSTR_PER_FMA)
+        fma_max = at[0]
+        sc = min(1.0, flops / FLOPS_PER_FMA / fma_max)
+        e_ref = watts / (fma_max * INSTR_PER_FMA * sc ** 3)
         for u in uarchs(cpu, run):
-            per.setdefault(u, []).append((e, run.name))
+            per.setdefault(u, []).append((e_ref, run.name))
     return {u: dict(energy_j=statistics.median(e for e, _ in v), runs=[r for _, r in v],
                     spread=(min(e for e, _ in v), max(e for e, _ in v))) for u, v in per.items()}
+
+
+def implied_power(run: Path, e_ref: float) -> dict | None:
+    """The package power a run must have drawn for its measured all-core sgemm, at a given e_ref (f^2 law)."""
+    flops = all_core_sgemm(run)
+    at = sgemm_at_max(run) if flops else None
+    if not at:
+        return None
+    sc = min(1.0, flops / FLOPS_PER_FMA / at[0])
+    return dict(clock_share=sc, watts=at[0] * INSTR_PER_FMA * e_ref * sc ** 3)
 
 
 if __name__ == "__main__":

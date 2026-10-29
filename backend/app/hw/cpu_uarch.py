@@ -31,18 +31,20 @@ U = {
 }
 ALIASES = {"kabylake": "skylake", "coffeelake": "skylake", "cometlake": "skylake", "raptorcove": "goldencove",
            "zenplus": "zen"}
-# Energy per instruction (J), the same for every class: calibrate_cpu_energy.py on the published runs (2026-10-29),
-# OpenBLAS sgemm on all cores taken as bound by the specified sustained package power. Median per microarchitecture:
-#   skylake     runs 65e0 (i7-7600U, 15 W), 30bd + 9403 (i7-9700, 65 W), e963 (i7-8700, 65 W): 0.886 nJ (0.811-1.472)
-#   goldencove / gracemont   0f60 + 62aa (i7-13700K, 125 W, one value for both core types): 1.329 nJ (1.147-1.511)
-#   zen3        af1c (Ryzen 9 5900X, PPT 141.75 W): 1.304 nJ
-# The spread within a microarchitecture is large: boards run CPUs above or below the specified power (the stick now
-# records the configured limits as context), and energy per instruction falls with clock and voltage.
+# Energy per instruction (J) at the core's maximum clock, the same for every class; at a lower clock f it is
+# e_ref x (f / f_max)^2 (dynamic power C V^2 f, voltage rising with the clock — the solver applies it).
+# calibrate_cpu_energy.py on the published runs (2026-10-29): OpenBLAS sgemm on all cores sets the clock share
+# s = measured / at-maximum, and s x e_ref x s^2 x instructions/s at maximum = the specified sustained power.
+# Median per microarchitecture (spread across runs):
+#   skylake     30bd + 9403 (i7-9700, 65 W), e963 (i7-8700, 65 W): 2.33 nJ (1.88-5.18)
+#   goldencove / gracemont   0f60 + 62aa (i7-13700K, 125 W, one value for both core types): 6.00 nJ (3.65-8.35)
+#   zen3        af1c (Ryzen 9 5900X, PPT 141.75 W): 3.51 nJ
+# The spread is the machines, not the law: the same i7-13700K ran its all-core sgemm at 1163 and at 882 GFLOP/s.
 ENERGY_J: dict[str, dict[str, float]] = {
-    "skylake": {"vec_alu": 8.86e-10, "shuffle": 8.86e-10, "vec_mul": 8.86e-10, "fma": 8.86e-10, "load": 8.86e-10, "store": 8.86e-10},
-    "goldencove": {"vec_alu": 1.329e-09, "shuffle": 1.329e-09, "vec_mul": 1.329e-09, "fma": 1.329e-09, "load": 1.329e-09, "store": 1.329e-09},
-    "gracemont": {"vec_alu": 1.329e-09, "shuffle": 1.329e-09, "vec_mul": 1.329e-09, "fma": 1.329e-09, "load": 1.329e-09, "store": 1.329e-09},
-    "zen3": {"vec_alu": 1.304e-09, "shuffle": 1.304e-09, "vec_mul": 1.304e-09, "fma": 1.304e-09, "load": 1.304e-09, "store": 1.304e-09},
+    "skylake": {"vec_alu": 2.33e-09, "shuffle": 2.33e-09, "vec_mul": 2.33e-09, "fma": 2.33e-09, "load": 2.33e-09, "store": 2.33e-09},
+    "goldencove": {"vec_alu": 6e-09, "shuffle": 6e-09, "vec_mul": 6e-09, "fma": 6e-09, "load": 6e-09, "store": 6e-09},
+    "gracemont": {"vec_alu": 6e-09, "shuffle": 6e-09, "vec_mul": 6e-09, "fma": 6e-09, "load": 6e-09, "store": 6e-09},
+    "zen3": {"vec_alu": 3.51e-09, "shuffle": 3.51e-09, "vec_mul": 3.51e-09, "fma": 3.51e-09, "load": 3.51e-09, "store": 3.51e-09},
 }
 
 

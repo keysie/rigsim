@@ -102,8 +102,10 @@ def _work_rates(m: Machine, works: list[Work]) -> dict[str, tuple[float, str]]:
     mixed = [w for w in works if w.mix]
     if not mixed:
         return out
-    cap: dict[str, float] = {}
+    cap: dict[str, float] = {}                       # issue and class budgets at the maximum clock
     coef: dict[str, dict[str, float]] = {}
+    energy: dict[str, float] = {}                    # J per op at the maximum clock
+    budget = None
     for w in mixed:
         c = m.nodes[w.compute]
         if not isinstance(c, Compute):
@@ -123,35 +125,50 @@ def _work_rates(m: Machine, works: list[Work]) -> dict[str, tuple[float, str]]:
                 per[k] = per.get(k, 0.0) + cnt / w.efficiency
         b = m.nodes.get(c.budget) if c.budget else None
         if b is not None and b.watts:
-            e = sum(cnt * c.energy_j.get(cls, 0.0) for cls, cnt in w.mix.items())
-            if e:
-                k = f"power:{b.id}"
-                cap[k] = b.watts
-                per[k] = e
-    # max-min fair progressive filling over the rates (ops per second)
-    rate = {w.id: 0.0 for w in mixed}
-    neck = {w.id: "" for w in mixed}
-    left = dict(cap)
-    active = {w.id for w in mixed if coef[w.id]}
+            energy[w.id] = sum(cnt * c.energy_j.get(cls, 0.0) for cls, cnt in w.mix.items()) / w.efficiency
+            budget = b
     for w in mixed:
         if not coef[w.id]:
             raise ValueError(f"work {w.id}: no budget on {w.compute} limits it (no clock or class rates)")
-    while active:
-        inc, which = float("inf"), None
-        for k, v in left.items():
-            d = sum(coef[i].get(k, 0.0) for i in active)
-            if d > 0 and v / d < inc:
-                inc, which = v / d, k
-        if which is None:
-            break
-        for i in active:
-            rate[i] += inc
-        for k in left:
-            left[k] -= inc * sum(coef[i].get(k, 0.0) for i in active)
-        done = {i for i in active if coef[i].get(which, 0.0) > 0}
-        for i in done:
-            neck[i] = which
-        active -= done
+
+    def fill(scale: float) -> tuple[dict, dict]:
+        """Max-min fair progressive filling with every core budget at `scale` x its maximum clock."""
+        rate = {w.id: 0.0 for w in mixed}
+        neck = {w.id: "" for w in mixed}
+        left = {k: v * scale for k, v in cap.items()}
+        active = {w.id for w in mixed}
+        while active:
+            inc, which = float("inf"), None
+            for k, v in left.items():
+                d = sum(coef[i].get(k, 0.0) for i in active)
+                if d > 0 and v / d < inc:
+                    inc, which = v / d, k
+            if which is None:
+                break
+            for i in active:
+                rate[i] += inc
+            for k in left:
+                left[k] -= inc * sum(coef[i].get(k, 0.0) for i in active)
+            done = {i for i in active if coef[i].get(which, 0.0) > 0}
+            for i in done:
+                neck[i] = which
+            active -= done
+        return rate, neck
+
+    # The package's clock follows its power budget: dynamic power is C V^2 f with the voltage rising with the clock,
+    # so energy per instruction scales with (f / f_max)^2 and, at full load, power with f^3. The solver picks the
+    # highest clock (as a share of every core's maximum) whose power fits the budget.
+    rate, neck = fill(1.0)
+    if budget is not None and energy:
+        power = lambda r, sc: sum(r[i] * energy.get(i, 0.0) * sc * sc for i in r)
+        if power(rate, 1.0) > budget.watts:
+            lo, hi = 0.0, 1.0
+            for _ in range(50):
+                mid = (lo + hi) / 2
+                r, _ = fill(mid)
+                lo, hi = (mid, hi) if power(r, mid) <= budget.watts else (lo, mid)
+            rate, _ = fill(lo)
+            neck = {i: f"power:{budget.id} (clock {lo:.0%} of maximum)" for i in rate}
     for w in mixed:
         out[w.id] = (rate[w.id], neck[w.id])
     return out

@@ -188,7 +188,9 @@ def test_cpu_budgets_issue_ports_and_power():
     assert one({"fma": 1}, 6) == pytest.approx(1e9 / (6 * 4e9 * 2))              # six cores, no power budget
     p = budget_machine(watts=60.0, energy={"fma": 2e-9})
     six = solve_step(p, Step("k", [Work("w", "core", "", 1e10, mix={"fma": 1}, units=6)]))
-    assert six.seconds == pytest.approx(1e10 * 2e-9 / 60.0) and six.bottleneck["w"] == "power:pkg.power"
+    r1 = 6 * 4e9 * 2                                                            # FMA/s at the maximum clock
+    sc = (60.0 / (r1 * 2e-9)) ** (1 / 3)                                        # power ~ f^3 at full load
+    assert six.seconds == pytest.approx(1e10 / (r1 * sc), rel=1e-6) and six.bottleneck["w"].startswith("power:pkg.power")
     single = solve_step(p, Step("k", [Work("w", "core", "", 1e9, mix={"fma": 1}, units=1)]))
     assert single.bottleneck["w"] == "fma:core#w"                               # one core alone: its clock binds
 
@@ -205,8 +207,9 @@ def test_cpu_budgets_on_a_published_machine():
     sgemm = {"fma": 1, "load": 0.5}
     gflops = lambda units: 16e9 / solve_step(s.m, Step("k", [Work("w", "core", "", 1e9, mix=sgemm, units=units)])).seconds / 1e9
     assert gflops(1) == pytest.approx(4.6 * 32, rel=1e-6)                     # 147 GFLOP/s (137 measured)
-    e = 1.5 * 0.886e-9                                                        # the Skylake-family constant per FMA + load
-    assert gflops(6) == pytest.approx(65.0 / e * 16 / 1e9, rel=1e-6)         # power-bound: ~782 (471 measured)
+    r1, e = 6 * 4.6e9 * 2, 1.5 * 2.33e-9                                    # FMA/s at max; J per FMA + load at max
+    sc = (65.0 / (r1 * e)) ** (1 / 3)                                        # the clock the 65 W budget allows
+    assert gflops(6) == pytest.approx(r1 * sc * 16 / 1e9, rel=1e-4)           # ~620 GFLOP/s (471 measured)
     assert s.m.nodes["pkg.power"].watts == 65.0
 
 
