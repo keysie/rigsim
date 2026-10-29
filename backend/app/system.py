@@ -97,8 +97,12 @@ def _add_cpu(s: System, run: Path) -> None:
     channels = min(spec["channels"], len(chans) if chans else len(ds))
     spd = inv.spd_timing(run)
     cl = round(spd["taa_ns"] * mts / 2000) if spd.get("taa_ns") else None
+    l3 = inv.l3_bytes(run)
     s.io, s.groups = arch.add_cpu(s.m, spec, mts, channels, fclk_mhz=fclk, cl=cl, mem_type=t,
-                                  density_gbit=spd.get("density_gbit"))
+                                  density_gbit=spd.get("density_gbit"), l3_bytes=l3)
+    for c in [n for n, x in s.m.nodes.items() if type(x).__name__ == "Cache"]:
+        s.labels[c] = f"L3 {s.m.nodes[c].capacity_b / 2**20:.0f} MiB (write-back, write-allocate)" + (
+            f" on {c.split('.')[0]}" if "." in c else "")
     s.cpu = dict(name=name, cpu=spec.get("arch"),
                  cores=spec.get("cores") or {"ccds": spec.get("ccds"), **spec.get("cores_per_ccd", {})},
                  fclk_mhz=f"{fclk:.0f} (AMD's default rule, not read from the machine)" if fclk else None,

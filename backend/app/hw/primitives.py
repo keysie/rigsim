@@ -50,6 +50,21 @@ class Storage:
 
 
 @dataclass
+class Cache(Storage):
+    """A storage in front of another (`backing`: a storage or an interleaved set's name) — a CPU's L3, a GPU's L2, an
+    SSD's DRAM or SLC cache. Its own speeds and latencies are a Storage's; what it adds is its policy:
+
+      write_allocate   a write to a line it does not hold first reads that line from the backing storage
+      write_back       written lines go to the backing storage when evicted (else: written through at once)
+
+    Whether an access hits is not computed: the engine states it (Transfer.hits) as an assumption about its software,
+    like a kernel's efficiency. Flows pass through a cache on their way to the backing storage."""
+    backing: str | None = None
+    write_allocate: bool | None = None
+    write_back: bool | None = None
+
+
+@dataclass
 class Compute:
     """Clock and per-class rates as multiples of it; `count` identical units (a core group is one object)."""
     id: str

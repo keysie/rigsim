@@ -8,6 +8,9 @@
             The engine states one more thing: how its operations access the storage — 'sequential' (one stream:
             the storage positions once) or 'random' (requests of request_bytes each, every one positioned anew).
             Reading and writing speeds, latencies, seek and the read/write switch are the storage's (primitives).
+            Two more statements about the software: `hits`, the share served by the cache nearest the compute on
+            the path (an assumption, like a kernel's efficiency: hits are never computed), and `non_temporal`,
+            writes that bypass the caches (streaming stores). What a miss or a write costs is the caches' policy.
   Work      operations of one class on a compute node — its units at its clock, at the efficiency the engine's
             kernel reaches (the engine's software fact; the peak is the node's)
   Fixed     a fixed time spent on a node before the step's activities (a kernel launch, a dispatch, a sync)
@@ -23,7 +26,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from .machine import Machine, Transfer as Flow, solve_transfers
-from .primitives import Compute, Storage
+from .primitives import Cache, Compute, Storage
 
 EPS = 1e-15
 
@@ -35,7 +38,9 @@ class Transfer:
     dst: str
     bytes: float
     units: int | None = None          # units of the compute at either end (None: all)
-    pattern: str = "sequential"       # 'sequential' | 'random' — the one access property an engine states
+    pattern: str = "sequential"       # 'sequential' | 'random' — how the operations access the storage
+    hits: float = 0.0                 # share served by the nearest cache on the path (the engine's assumption)
+    non_temporal: bool = False        # writes that bypass the caches (streaming stores)
     request_bytes: float | None = None  # size of one operation's request (random: each positions anew)
 
 
@@ -168,7 +173,70 @@ def _amount(a) -> float:
     return a.bytes if isinstance(a, Transfer) else a.ops
 
 
+def _nearest_cache(m: Machine, compute: str, storage: str) -> str | None:
+    """The cache closest to the compute on the path to a storage (or to the first member of an interleaved set)."""
+    target = m.interleaved.get(storage, [storage])[0]
+    try:
+        hops = m.path(compute, target)
+    except ValueError:
+        return None
+    return next((n for _, n in hops if isinstance(m.nodes.get(n), Cache)), None)
+
+
+def _expand(m: Machine, a) -> list:
+    """A transfer as the flows the hardware makes of it, given the caches on its path and the engine's hit share:
+    a read's hits come from the cache, its misses from the storage; a write's hits go to the cache; a write miss goes
+    to the storage directly when non-temporal or when the cache does not allocate, else the cache first reads the line
+    from the storage (write-allocate) and — write-back or write-through — the line is written to the storage."""
+    if not isinstance(a, Transfer):
+        return [a]
+    writes = isinstance(m.nodes.get(a.src), Compute)
+    comp, store = (a.src, a.dst) if writes else (a.dst, a.src)
+    c = _nearest_cache(m, comp, store) if isinstance(m.nodes.get(comp), Compute) else None
+    if c is None:
+        return [a]
+    h = min(max(a.hits, 0.0), 1.0)
+    hit, miss = a.bytes * h, a.bytes * (1 - h)
+    part = lambda suffix, src, dst, b: Transfer(f"{a.id}{suffix}", src, dst, b, a.units, a.pattern, a.request_bytes)
+    out = []
+    if not writes:
+        if hit:
+            out.append(part(".hit", c, comp, hit))
+        if miss:
+            out.append(part("", store, comp, miss))
+        return out
+    if hit:
+        out.append(part(".hit", comp, c, hit))
+    if miss:
+        cache = m.nodes[c]
+        if a.non_temporal or not cache.write_allocate:
+            out.append(part("", comp, store, miss))
+        else:
+            out.append(part(".allocate", store, c, miss))           # the line is read before it is written
+            out.append(part("", c, store, miss))                     # and reaches the storage (evicted or through)
+    return out
+
+
 def solve_step(m: Machine, step: Step, cache: dict | None = None) -> StepTime:
+    """Solves a step; transfers are first turned into the flows the caches on their paths make of them."""
+    parts, owner = [], {}
+    for a in step.concurrent:
+        for p in _expand(m, a):
+            parts.append(p); owner[p.id] = a.id
+    if all(owner[p.id] == p.id for p in parts) and len(parts) == len(step.concurrent):
+        return _solve_flat(m, step, cache)
+    r = _solve_flat(m, Step(step.label, parts, step.fixed), cache)
+    finish, alone, neck = {}, {}, {}
+    for pid, oid in owner.items():
+        finish[oid] = max(finish.get(oid, 0.0), r.finish_s.get(pid, 0.0))
+        neck.setdefault(oid, r.bottleneck.get(pid, ""))
+    for a in step.concurrent:
+        mine = [p for p in parts if owner[p.id] == a.id]
+        alone[a.id] = _solve_flat(m, Step(a.id, mine), cache).seconds if mine else 0.0
+    return StepTime(step.label, r.seconds, r.fixed_s, finish, alone, neck)
+
+
+def _solve_flat(m: Machine, step: Step, cache: dict | None = None) -> StepTime:
     cache = {} if cache is None else cache
     fixed = sum(f.seconds for f in step.fixed)
     left = {a.id: _amount(a) for a in step.concurrent}

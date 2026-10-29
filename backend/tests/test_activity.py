@@ -129,4 +129,41 @@ def test_likwid_engine_threads_and_directions(tmp_path):
     eight, _ = likwid.bandwidth_bps(s.m, s.groups, "load_avx", 8)
     assert one < eight and "1 threads on 1 p" in how and "3 KiB in flight" in how      # 48 lines of one P-core
     nt, _ = likwid.bandwidth_bps(s.m, s.groups, "store_mem_avx", 8)
-    assert nt > 0 and "store_avx" in likwid.NOT_YET
+    assert nt > 0
+
+
+def cache_machine(write_allocate=True):
+    from app.hw.primitives import Cache
+    m = Machine()
+    m.add(Router("r"))
+    m.add(Storage("mem", capacity_b=1e12, bandwidth_bps=100e9, access_s=None))
+    m.connect(Link("bus", "mem", "r", None))
+    m.add(Cache("l3", capacity_b=32e6, bandwidth_bps=1000e9, access_s=None, backing="mem",
+                write_allocate=write_allocate, write_back=True))
+    m.connect(Link("l3.port", "l3", "r", None))
+    m.add(Compute("c", clock_hz=1e9, count=8))
+    m.connect(Link("c.link", "c", "l3", None))
+    return m
+
+
+def test_cache_hits_are_stated_misses_and_writes_follow_the_policy():
+    m = cache_machine()
+    read = lambda h: solve_step(m, Step("r", [Transfer("x", "mem", "c", 10e9, hits=h)])).seconds
+    assert read(0.0) == pytest.approx(0.1) and read(1.0) == pytest.approx(0.01) and read(0.5) == pytest.approx(0.05)
+    # an ordinary write miss: the line is read first (write-allocate), then written back — twice the memory traffic
+    assert solve_step(m, Step("w", [Transfer("w", "c", "mem", 10e9)])).seconds == pytest.approx(0.2)
+    # streaming stores bypass the cache: once
+    assert solve_step(m, Step("nt", [Transfer("w", "c", "mem", 10e9, non_temporal=True)])).seconds == pytest.approx(0.1)
+    m2 = cache_machine(write_allocate=False)
+    assert solve_step(m2, Step("w", [Transfer("w", "c", "mem", 10e9)])).seconds == pytest.approx(0.1)
+
+
+def test_l3_in_the_cpu_graph(tmp_path):
+    from app.system import build_system
+    from tests.test_system import machine_run
+    run = machine_run(tmp_path)
+    (run / "inventory" / "lscpu.txt").write_text("L3 cache:                                30 MiB (1 instance)\n")
+    s = build_system(run)
+    l3 = s.m.nodes["l3"]
+    assert l3.capacity_b == 30 * 2**20 and l3.write_allocate and l3.write_back and l3.backing == "ram"
+    assert [n for _, n in s.m.path("p", "pkg")] == ["l3", "pkg"] and "L3 30 MiB" in s.labels["l3"]
