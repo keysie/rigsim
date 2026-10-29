@@ -14,8 +14,8 @@ engines here run. From the vendors' optimisation manuals and Agner Fog's instruc
     on two, FMA on two; three loads (two 256-bit), two stores.
 
 Energy per instruction is documented nowhere: a global constant per microarchitecture, set from measurements
-(calibrate.py, the stick's cpu-gemm one core vs all cores). None until calibrated: the power budget then does not
-bind, which overestimates many cores together — stated in every prediction.
+(calibrate_cpu_energy.py, the stick's cpu-gemm on all cores against the specified package power). Where a
+microarchitecture is not calibrated, the power budget does not bind, which overestimates many cores together.
 """
 from __future__ import annotations
 
@@ -31,7 +31,19 @@ U = {
 }
 ALIASES = {"kabylake": "skylake", "coffeelake": "skylake", "cometlake": "skylake", "raptorcove": "goldencove",
            "zenplus": "zen"}
-ENERGY_J: dict[str, dict[str, float]] = {}      # per microarchitecture, from calibrate.py; empty until calibrated
+# Energy per instruction (J), the same for every class: calibrate_cpu_energy.py on the published runs (2026-10-29),
+# OpenBLAS sgemm on all cores taken as bound by the specified sustained package power. Median per microarchitecture:
+#   skylake     runs 65e0 (i7-7600U, 15 W), 30bd + 9403 (i7-9700, 65 W), e963 (i7-8700, 65 W): 0.886 nJ (0.811-1.472)
+#   goldencove / gracemont   0f60 + 62aa (i7-13700K, 125 W, one value for both core types): 1.329 nJ (1.147-1.511)
+#   zen3        af1c (Ryzen 9 5900X, PPT 141.75 W): 1.304 nJ
+# The spread within a microarchitecture is large: boards run CPUs above or below the specified power (the stick now
+# records the configured limits as context), and energy per instruction falls with clock and voltage.
+ENERGY_J: dict[str, dict[str, float]] = {
+    "skylake": {"vec_alu": 8.86e-10, "shuffle": 8.86e-10, "vec_mul": 8.86e-10, "fma": 8.86e-10, "load": 8.86e-10, "store": 8.86e-10},
+    "goldencove": {"vec_alu": 1.329e-09, "shuffle": 1.329e-09, "vec_mul": 1.329e-09, "fma": 1.329e-09, "load": 1.329e-09, "store": 1.329e-09},
+    "gracemont": {"vec_alu": 1.329e-09, "shuffle": 1.329e-09, "vec_mul": 1.329e-09, "fma": 1.329e-09, "load": 1.329e-09, "store": 1.329e-09},
+    "zen3": {"vec_alu": 1.304e-09, "shuffle": 1.304e-09, "vec_mul": 1.304e-09, "fma": 1.304e-09, "load": 1.304e-09, "store": 1.304e-09},
+}
 
 
 def lookup(core: str | None) -> dict | None:

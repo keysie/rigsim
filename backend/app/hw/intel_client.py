@@ -62,6 +62,31 @@ def memory_support(gen: int, tier: str, number: int) -> dict:
     return g.get(f"mem_{tier}", g["mem"])
 
 
+# Sustained package power (TDP; from 12th gen "Processor Base Power") by generation, tier and suffix, as Intel ARK
+# lists the desktop parts: K / KF unlocked, T low power, no suffix / F standard. Mobile U parts 15 W.
+TDP_W = {6: dict(K=91, std=65, T=35), 7: dict(K=91, std=65, T=35), 8: dict(K=95, std=65, T=35),
+         9: dict(K=95, std=65, T=35), 10: dict(K=125, std=65, T=35), 11: dict(K=125, std=65, T=35),
+         12: dict(K=125, std=65, T=35), 13: dict(K=125, std=65, T=35)}
+I3_SKYLAKE_KABY_W = 51                       # i3-6100 / i3-7100 class (ARK), the exception to the table
+
+
+def package_power_w(cpu: str) -> tuple[float | None, str]:
+    """The specified sustained package power (W) and where it comes from; the user may scale it."""
+    g = generation(cpu)
+    m = MODEL.search(cpu or "")
+    if not g or not m:
+        return None, "package power not specified for this CPU"
+    gen, tier, _ = g
+    suffix = m.group(3)
+    if suffix.startswith("U"):
+        return 15.0, "Intel ARK: mobile U, 15 W"
+    if tier == "i3" and gen in (6, 7) and not suffix.startswith("T"):
+        return float(I3_SKYLAKE_KABY_W), "Intel ARK: TDP 51 W"
+    kind = "K" if suffix.startswith("K") else "T" if suffix.startswith("T") else "std"
+    w = TDP_W[gen][kind]
+    return float(w), f"Intel ARK: {'Processor Base Power' if gen >= 12 else 'TDP'} {w} W"
+
+
 def spec(cpu: str, cores: dict[str, int]) -> dict | None:
     """A cpus.py-style entry for this CPU, with the core counts the machine reports ({'p': 8, 'e': 8} on hybrid
     generations, {'core': n} before)."""

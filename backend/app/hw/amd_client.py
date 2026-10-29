@@ -68,6 +68,39 @@ def family(cpu: str) -> str | None:
     return None
 
 
+# TDP per desktop model (AMD product pages); the socket's sustained limit is PPT = 1.35 x TDP (AMD's documented
+# AM4 / AM5 package power tracking). Models not listed: not specified.
+TDP_W = {1800: 95, 1700: 65, 1600: 65, 1500: 65, 1400: 65, 1300: 65, 1200: 65,
+         2700: 65, 2600: 65, 2400: 65, 2200: 65,
+         3950: 105, 3900: 105, 3800: 105, 3700: 65, 3600: 65, 3500: 65, 3400: 65, 3300: 65, 3200: 65, 3100: 65,
+         4600: 65, 4650: 65, 4700: 65, 4500: 65, 4100: 65,
+         5950: 105, 5900: 105, 5800: 105, 5700: 65, 5600: 65, 5500: 65,
+         7950: 170, 7900: 170, 7800: 120, 7700: 105, 7600: 105}
+X_TDP = {1800: 95, 1700: 95, 1600: 95, 1500: 65, 2700: 105, 2600: 95, 3700: 65, 3600: 95, 3800: 105,
+         5700: 65, 5600: 65, 7900: 170, 7700: 105, 7600: 105}
+PPT_FACTOR = 1.35
+
+
+def package_power_w(cpu: str) -> tuple[float | None, str]:
+    """PPT (W) from the model's TDP, and where it comes from; the user may scale it."""
+    m = MODEL.search(cpu or "")
+    if not m or not family(cpu):
+        return None, "package power not specified for this CPU"
+    num, suf = int(m.group(1)), m.group(2)
+    nonx = {7900: 65, 7700: 65, 7600: 65}
+    if suf.startswith("X3D"):
+        tdp = 120 if num // 1000 == 7 else 105
+    elif suf.startswith("X"):
+        tdp = X_TDP.get(num, TDP_W.get(num))
+    elif suf.startswith("GE"):
+        tdp = 35
+    else:
+        tdp = nonx.get(num, TDP_W.get(num))
+    if not tdp:
+        return None, f"TDP of the Ryzen {num}{suf} not in the table"
+    return tdp * PPT_FACTOR, f"AMD: TDP {tdp} W, PPT = 1.35 x TDP"
+
+
 def fclk_mhz(fam: str, mts: float) -> float | None:
     """AMD's default fabric clock for this memory speed (module docstring); None for monolithic parts."""
     core = FAMILIES[fam]["core"]

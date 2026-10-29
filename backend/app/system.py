@@ -99,7 +99,8 @@ def _add_cpu(s: System, run: Path) -> None:
     cl = round(spd["taa_ns"] * mts / 2000) if spd.get("taa_ns") else None
     l3 = inv.l3_bytes(run)
     clock = inv.max_clock_hz(run)
-    watts, wbasis = inv.package_power(run)
+    watts, wbasis = (intel_client.package_power_w(name) if intel_client.generation(name)
+                     else amd_client.package_power_w(name))
     s.io, s.groups = arch.add_cpu(s.m, spec, mts, channels, fclk_mhz=fclk, cl=cl, mem_type=t,
                                   density_gbit=spd.get("density_gbit"), l3_bytes=l3, clock_hz=clock,
                                   power=(watts, wbasis))
