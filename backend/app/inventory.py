@@ -177,6 +177,15 @@ def gpu_names(run: Path) -> list[str]:
         return []
 
 
+def l3_bytes(run: Path) -> float | None:
+    """The machine's total L3 (lscpu: 'L3 cache: 64 MiB (2 instances)')."""
+    f = run / "inventory" / "lscpu.txt"
+    m = re.search(r"^L3 cache:\s*([\d.]+)\s*(KiB|MiB|GiB|K|M)", f.read_text(errors="replace"), re.M) if f.exists() else None
+    if not m:
+        return None
+    return float(m.group(1)) * {"K": 2**10, "KiB": 2**10, "M": 2**20, "MiB": 2**20, "GiB": 2**30}[m.group(2)]
+
+
 def pcie_devices(run: Path) -> dict:
     """inventory/pcie.json (format 1.2+): every PCI device with parent, path, port type, link."""
     try:

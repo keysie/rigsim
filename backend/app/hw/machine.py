@@ -5,7 +5,7 @@ from collections import deque
 from dataclasses import dataclass
 
 from .flows import max_min_fair_share
-from .primitives import Compute, Link, Router, Storage
+from .primitives import Cache, Compute, Link, Router, Storage
 
 
 @dataclass
@@ -48,14 +48,14 @@ class Machine:
 
     # --- paths -------------------------------------------------------------------------------------------------
     def path(self, src: str, dst: str) -> list[tuple[Link, str]]:
-        """Fewest hops from src to dst; only routers may be passed through. Returns [(link, node reached), ...]."""
+        """Fewest hops from src to dst; only routers and caches may be passed through. Returns [(link, node reached)]."""
         prev: dict[str, tuple[Link, str] | None] = {src: None}
         q = deque([src])
         while q:
             n = q.popleft()
             if n == dst:
                 break
-            if n != src and not isinstance(self.nodes[n], Router):
+            if n != src and not isinstance(self.nodes[n], (Router, Cache)):
                 continue
             for l in self._adj[n]:
                 m = l.b if l.a == n else l.a
