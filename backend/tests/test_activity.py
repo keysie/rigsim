@@ -205,5 +205,6 @@ def test_cpu_budgets_on_a_published_machine():
     sgemm = {"fma": 1, "load": 0.5}
     gflops = lambda units: 16e9 / solve_step(s.m, Step("k", [Work("w", "core", "", 1e9, mix=sgemm, units=units)])).seconds / 1e9
     assert gflops(1) == pytest.approx(4.6 * 32, rel=1e-6)                     # 147 GFLOP/s (137 measured)
-    assert 450 < gflops(6) < 560                                              # power-bound (471 measured)
+    e = 1.5 * 0.886e-9                                                        # the Skylake-family constant per FMA + load
+    assert gflops(6) == pytest.approx(65.0 / e * 16 / 1e9, rel=1e-6)         # power-bound: ~782 (471 measured)
     assert s.m.nodes["pkg.power"].watts == 65.0
