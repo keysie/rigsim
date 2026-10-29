@@ -98,8 +98,13 @@ def _add_cpu(s: System, run: Path) -> None:
     spd = inv.spd_timing(run)
     cl = round(spd["taa_ns"] * mts / 2000) if spd.get("taa_ns") else None
     l3 = inv.l3_bytes(run)
+    clock = inv.max_clock_hz(run)
+    watts, wbasis = inv.package_power(run)
     s.io, s.groups = arch.add_cpu(s.m, spec, mts, channels, fclk_mhz=fclk, cl=cl, mem_type=t,
-                                  density_gbit=spd.get("density_gbit"), l3_bytes=l3)
+                                  density_gbit=spd.get("density_gbit"), l3_bytes=l3, clock_hz=clock,
+                                  power=(watts, wbasis))
+    if watts:
+        s.labels["pkg.power"] = f"package power budget {watts:.0f} W ({wbasis})"
     for c in [n for n, x in s.m.nodes.items() if type(x).__name__ == "Cache"]:
         s.labels[c] = f"L3 {s.m.nodes[c].capacity_b / 2**20:.0f} MiB (write-back, write-allocate)" + (
             f" on {c.split('.')[0]}" if "." in c else "")
@@ -108,6 +113,7 @@ def _add_cpu(s: System, run: Path) -> None:
                  fclk_mhz=f"{fclk:.0f} (AMD's default rule, not read from the machine)" if fclk else None,
                  mem=f"{t.upper()}-{mts}", channels=channels, cl=cl, density_gbit=spd.get("density_gbit"),
                  channels_from="locators" if chans else "DIMM count")
+    s.cpu.update(clock_mhz=round(clock / 1e6) if clock else None, power=f"{watts:.0f} W ({wbasis})" if watts else wbasis)
     s.labels[s.io] = f"{name} — package" if s.io == "pkg" else f"{name} — I/O die"
     uarch = spec.get("core_uarch") or {}
     for g in s.groups:

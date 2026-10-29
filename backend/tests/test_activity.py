@@ -167,3 +167,27 @@ def test_l3_in_the_cpu_graph(tmp_path):
     l3 = s.m.nodes["l3"]
     assert l3.capacity_b == 30 * 2**20 and l3.write_allocate and l3.write_back and l3.backing == "ram"
     assert [n for _, n in s.m.path("p", "pkg")] == ["l3", "pkg"] and "L3 30 MiB" in s.labels["l3"]
+
+
+def budget_machine(watts=None, energy=None):
+    from app.hw.primitives import PowerBudget
+    m = Machine()
+    if watts is not None:
+        m.add(PowerBudget("pkg.power", watts))
+    m.add(Compute("core", clock_hz=4e9, count=6, ops_per_clock=dict(fma=2, shuffle=1, vec_alu=3),
+                  issue_per_clock=4, energy_j=energy or {}, budget="pkg.power" if watts is not None else None))
+    return m
+
+
+def test_cpu_budgets_issue_ports_and_power():
+    m = budget_machine()
+    one = lambda mix, units, n=1e9: solve_step(m, Step("k", [Work("w", "core", "", n, mix=mix, units=units)])).seconds
+    assert one({"fma": 1}, 1) == pytest.approx(1e9 / (4e9 * 2))                 # one core, port-bound: 2 FMA/clock
+    assert one({"shuffle": 27, "vec_alu": 28}, 1) == pytest.approx(1e9 * 27 / 4e9)    # the single shuffle port binds
+    assert one({"vec_alu": 3, "fma": 2, "shuffle": 1}, 1) == pytest.approx(1e9 * 6 / (4 * 4e9))   # issue width binds
+    assert one({"fma": 1}, 6) == pytest.approx(1e9 / (6 * 4e9 * 2))              # six cores, no power budget
+    p = budget_machine(watts=60.0, energy={"fma": 2e-9})
+    six = solve_step(p, Step("k", [Work("w", "core", "", 1e10, mix={"fma": 1}, units=6)]))
+    assert six.seconds == pytest.approx(1e10 * 2e-9 / 60.0) and six.bottleneck["w"] == "power:pkg.power"
+    single = solve_step(p, Step("k", [Work("w", "core", "", 1e9, mix={"fma": 1}, units=1)]))
+    assert single.bottleneck["w"] == "fma:core#w"                               # one core alone: its clock binds

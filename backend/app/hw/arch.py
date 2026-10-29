@@ -9,7 +9,8 @@ from __future__ import annotations
 from . import constants as K
 from . import dram
 from .machine import Machine, Read
-from .primitives import Cache, Compute, Link, Router, Storage
+from . import cpu_uarch
+from .primitives import Cache, Compute, Link, PowerBudget, Router, Storage
 
 LINE_B = 64
 
@@ -22,6 +23,17 @@ def access_s(mts: float, cl: int | None) -> float:
 
 def FIXED_LATENCY_S() -> float:
     return K.FIXED_LATENCY_NS * 1e-9
+
+
+def _core(gid: str, spec: dict | None, core_type: str, n: int, clock_hz: float | None, budget: bool) -> Compute:
+    """A core group: its miss queue, and — with a clock — its budgets from the microarchitecture's documentation."""
+    uarch = ((spec or {}).get("core_uarch") or {})
+    u = cpu_uarch.lookup(uarch.get(core_type) if isinstance(uarch, dict) else uarch)
+    c = Compute(gid, clock_hz=clock_hz or 0.0, count=n, outstanding=_queue(spec, core_type))
+    if u and clock_hz:
+        c.ops_per_clock, c.issue_per_clock, c.energy_j = dict(u["rates"]), u["issue"], dict(u["energy"])
+        c.budget = "pkg.power" if budget else None
+    return c
 
 
 def _l3(m: Machine, cid: str, size: float, router: str) -> str:
@@ -80,13 +92,17 @@ def add_cpu(m: Machine, spec: dict | None, mts: float, channels: int, eff_dram: 
             fclk_mhz: float | None = None, eff_link: float | None = None, core_link_bps: float | None = None,
             cl: int | None = None, mem_type: str | None = None, density_gbit: int | None = None,
             trefi_ns: float | None = None, trfc_ns: float | None = None,
-            l3_bytes: float | None = None) -> tuple[str, list[str]]:
+            l3_bytes: float | None = None, clock_hz: float | None = None,
+            power: tuple[float | None, str] | None = None) -> tuple[str, list[str]]:
     """Adds the CPU package and its memory channels to an existing machine. Returns the package's I/O router (where
     PCIe root ports and an integrated GPU attach: 'pkg', or 'iod' on chiplet parts) and the core groups. Unknown
     CPU: one generic core group, monolithic. Efficiencies default to the global constants.
     `l3_bytes` (the machine's own report): a last-level cache between the cores and the package (per core die on
     chiplet parts), write-back and write-allocate — x86's write-back memory type (Intel SDM vol. 3A, memory types;
-    AMD APM vol. 2, memory types). Its speeds and latency are not identified here: non-binding. `core_link_bps`: what one
+    AMD APM vol. 2, memory types). Its speeds and latency are not identified here: non-binding.
+    `clock_hz` (the machine's maximum turbo clock) and `power` (watts, basis) make the cores budgets
+    (docs/overhaul/cpu-compute.md): issue width and per-class rates from cpu_uarch, energy per instruction where
+    calibrated, drawing on one package power budget. `core_link_bps`: what one
     core sustains (its own link to its router); None = from the documented miss queue (Little's law) where sourced,
     else not identified."""
     if eff_dram is None:
@@ -96,6 +112,8 @@ def add_cpu(m: Machine, spec: dict | None, mts: float, channels: int, eff_dram: 
     eff_link = K.CHIPLET_LINK_EFFICIENCY if eff_link is None else eff_link
     lat = access_s(mts, cl)
     groups: list[str] = []
+    if power is not None:
+        m.add(PowerBudget("pkg.power", power[0], power[1]))
     if spec and spec["topology"] == "chiplet" and fclk_mhz:
         io = "iod"
         m.add(Router(io))
@@ -107,7 +125,7 @@ def add_cpu(m: Machine, spec: dict | None, mts: float, channels: int, eff_dram: 
             near = _l3(m, f"{r}.l3", l3_bytes / spec["ccds"], r) if l3_bytes else r
             for t, n in spec["cores_per_ccd"].items():
                 g = f"{r}.{t}"
-                m.add(Compute(g, clock_hz=0.0, count=n, outstanding=_queue(spec, t)))
+                m.add(_core(g, spec, t, n, clock_hz, power is not None))
                 bps = core_link_bps if core_link_bps is not None else core_link_from_queue(spec, t, lat)
                 m.connect(Link(f"{g}.link", g, near, bps, per_unit=True))
                 groups.append(g)
@@ -117,7 +135,7 @@ def add_cpu(m: Machine, spec: dict | None, mts: float, channels: int, eff_dram: 
         _channels(m, io, mts, channels, eff_dram, cl, mem_type)
         near = _l3(m, "l3", l3_bytes, io) if l3_bytes else io
         for t, n in ((spec or {}).get("cores") or {"generic": 8}).items():
-            m.add(Compute(t, clock_hz=0.0, count=n, outstanding=_queue(spec, t)))
+            m.add(_core(t, spec, t, n, clock_hz, power is not None))
             bps = core_link_bps if core_link_bps is not None else core_link_from_queue(spec, t, lat)
             m.connect(Link(f"{t}.link", t, near, bps, per_unit=True))
             groups.append(t)
