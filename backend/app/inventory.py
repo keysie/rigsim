@@ -177,6 +177,30 @@ def gpu_names(run: Path) -> list[str]:
         return []
 
 
+def max_clock_hz(run: Path) -> float | None:
+    """The highest clock the machine reports for its cores (lscpu 'CPU max MHz')."""
+    f = run / "inventory" / "lscpu.txt"
+    m = re.search(r"^CPU max MHz:\s*([\d.]+)", f.read_text(errors="replace"), re.M) if f.exists() else None
+    return float(m.group(1)) * 1e6 if m else None
+
+
+def package_power(run: Path) -> tuple[float | None, str]:
+    """The package's power budget from inventory/powercap.json (format 1.4+): the short-term limit (PL2), which a
+    benchmark of seconds runs under — the time behaviour (PL2 for up to tau, then PL1) is the open point."""
+    try:
+        zones = json.loads((run / "inventory" / "powercap.json").read_text()).get("zones", {})
+    except (OSError, ValueError):
+        return None, "package power limit not recorded (stick before 0.13.0)"
+    for z in zones.values():
+        if str(z.get("name", "")).startswith("package"):
+            c = {x.get("name"): x.get("limit_w") for x in z.get("constraints", [])}
+            if c.get("short_term"):
+                return c["short_term"], "RAPL short-term limit (PL2)"
+            if c.get("long_term"):
+                return c["long_term"], "RAPL long-term limit (PL1)"
+    return None, "no package power limit in powercap.json"
+
+
 def l3_bytes(run: Path) -> float | None:
     """The machine's total L3 (lscpu: 'L3 cache: 64 MiB (2 instances)')."""
     f = run / "inventory" / "lscpu.txt"

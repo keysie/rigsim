@@ -53,6 +53,8 @@ class Work:
     efficiency: float = 1.0           # what the engine's kernel reaches of the node's peak for this class
     units: int | None = None
     basis: str = ""
+    mix: dict | None = None           # instructions per op by class (a kernel's loop, counted from its code): a CPU
+                                      # work then draws on the node's issue and per-class budgets and the power budget
 
 
 @dataclass
@@ -81,18 +83,77 @@ class StepTime:
 
 
 def _work_rates(m: Machine, works: list[Work]) -> dict[str, tuple[float, str]]:
-    """Works on the same compute node share its units equally."""
-    by_node: dict[str, list[Work]] = {}
-    for w in works:
-        by_node.setdefault(w.compute, []).append(w)
+    """Works with an instruction mix draw on budgets (docs/overhaul/cpu-compute.md), solved max-min fairly:
+    per compute node its issue budget (units x clock x issue width) and one budget per instruction class
+    (units x clock x class rate), per package its power (watts, drawn as energy per instruction). A work on a subset
+    of a node's units (Work.units) has those units' share. Works without a mix keep the plain rule: a class's peak
+    times the kernel's efficiency, shared equally by the works on that node."""
     out = {}
+    plain = [w for w in works if not w.mix]
+    by_node: dict[str, list[Work]] = {}
+    for w in plain:
+        by_node.setdefault(w.compute, []).append(w)
     for node, ws in by_node.items():
         c = m.nodes[node]
         if not isinstance(c, Compute):
             raise TypeError(f"work on {node}: not a compute node")
         for w in ws:
-            peak = c.rate(w.op_class, w.units)
-            out[w.id] = (peak * w.efficiency / len(ws), f"compute:{node}")
+            out[w.id] = (c.rate(w.op_class, w.units) * w.efficiency / len(ws), f"compute:{node}")
+    mixed = [w for w in works if w.mix]
+    if not mixed:
+        return out
+    cap: dict[str, float] = {}
+    coef: dict[str, dict[str, float]] = {}
+    for w in mixed:
+        c = m.nodes[w.compute]
+        if not isinstance(c, Compute):
+            raise TypeError(f"work on {w.compute}: not a compute node")
+        n = c.count if w.units is None else min(w.units, c.count)
+        share = f"{w.compute}" if w.units is None else f"{w.compute}#{w.id}"
+        per = coef.setdefault(w.id, {})
+        if c.issue_per_clock:
+            k = f"issue:{share}"
+            cap[k] = n * c.clock_hz * c.issue_per_clock
+            per[k] = sum(w.mix.values()) / w.efficiency
+        for cls, cnt in w.mix.items():
+            rate = c.ops_per_clock.get(cls)
+            if rate:
+                k = f"{cls}:{share}"
+                cap[k] = n * c.clock_hz * rate
+                per[k] = per.get(k, 0.0) + cnt / w.efficiency
+        b = m.nodes.get(c.budget) if c.budget else None
+        if b is not None and b.watts:
+            e = sum(cnt * c.energy_j.get(cls, 0.0) for cls, cnt in w.mix.items())
+            if e:
+                k = f"power:{b.id}"
+                cap[k] = b.watts
+                per[k] = e
+    # max-min fair progressive filling over the rates (ops per second)
+    rate = {w.id: 0.0 for w in mixed}
+    neck = {w.id: "" for w in mixed}
+    left = dict(cap)
+    active = {w.id for w in mixed if coef[w.id]}
+    for w in mixed:
+        if not coef[w.id]:
+            raise ValueError(f"work {w.id}: no budget on {w.compute} limits it (no clock or class rates)")
+    while active:
+        inc, which = float("inf"), None
+        for k, v in left.items():
+            d = sum(coef[i].get(k, 0.0) for i in active)
+            if d > 0 and v / d < inc:
+                inc, which = v / d, k
+        if which is None:
+            break
+        for i in active:
+            rate[i] += inc
+        for k in left:
+            left[k] -= inc * sum(coef[i].get(k, 0.0) for i in active)
+        done = {i for i in active if coef[i].get(which, 0.0) > 0}
+        for i in done:
+            neck[i] = which
+        active -= done
+    for w in mixed:
+        out[w.id] = (rate[w.id], neck[w.id])
     return out
 
 

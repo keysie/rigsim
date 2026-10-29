@@ -72,6 +72,11 @@ class Compute:
     ops_per_clock: dict[str, float] = field(default_factory=dict)   # per unit, per operation class
     count: int = 1
     outstanding: int | None = None    # memory requests one unit can have in flight (its miss queue); None = not identified
+    # CPU cores as budgets (docs/overhaul/cpu-compute.md): instructions issued per clock per unit (None: no issue
+    # limit), and the energy one instruction of a class draws from the power budget it belongs to
+    issue_per_clock: float | None = None
+    energy_j: dict[str, float] = field(default_factory=dict)
+    budget: str | None = None         # the PowerBudget it draws from (the package)
 
     def rate(self, op_class: str, units: int | None = None) -> float:
         n = self.count if units is None else min(units, self.count)
@@ -101,3 +106,13 @@ class Router:
     latency_s: float = 0.0
     cpu: str | None = None
     cycles_per_byte: float = 0.0
+
+
+@dataclass
+class PowerBudget:
+    """A power budget compute draws energy from — a CPU package's limit (RAPL PL1 / PL2, else the documented TDP).
+    Not part of any path: compute nodes name it (Compute.budget)."""
+    id: str
+    watts: float | None
+    basis: str = ""
+
