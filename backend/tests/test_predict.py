@@ -98,7 +98,7 @@ def test_inventory_cpu_and_memory(tmp_path):
     by = {p["key"]: p["value"] for p in preds}
     assert 70 < by["mlc/idle_latency"] < 100                   # 16 ns CAS + the global fixed term
     assert 60 < by["mlc/max_bandwidth/all_reads"] < 89.6        # below the 2 x 44.8 GB/s peak
-    assert not unsup and "bus turnaround" in next(p for p in preds if p["key"].endswith("3to1_rw"))["basis"]
+    assert not unsup and "lines in flight" in next(p for p in preds if p["key"].endswith("3to1_rw"))["basis"]
 
 
 def test_cpu_memory_reasons(tmp_path):

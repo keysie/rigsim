@@ -20,6 +20,14 @@ def access_s(mts: float, cl: int | None) -> float:
     return cas + K.FIXED_LATENCY_NS * 1e-9
 
 
+def FIXED_LATENCY_S() -> float:
+    return K.FIXED_LATENCY_NS * 1e-9
+
+
+def _queue(spec: dict | None, core_type: str) -> int | None:
+    return ((spec or {}).get("outstanding_misses_per_core") or {}).get(core_type)
+
+
 def core_link_from_queue(spec: dict | None, core_type: str, latency_s: float) -> float | None:
     q = ((spec or {}).get("outstanding_misses_per_core") or {}).get(core_type)
     return q * LINE_B / latency_s if q else None
@@ -40,7 +48,10 @@ def _channels(m: Machine, router: str, mts: float, channels: int, eff_dram: floa
     for c in range(channels):
         for s in range(k):
             n = f"ch{c}" if k == 1 else f"ch{c}.sub{s}"
-            m.add(Storage(n, capacity_b=16 * 2**30 / k, bandwidth_bps=per * eff_dram, access_s=access_s(mts, cl)))
+            w = dram.write_timing((mem_type or "").lower(), mts, cl)
+            m.add(Storage(n, capacity_b=16 * 2**30 / k, bandwidth_bps=per * eff_dram, access_s=access_s(mts, cl),
+                          write_access_s=(FIXED_LATENCY_S() + w["cwl_ns"] * 1e-9) if w else None,
+                          turnaround_s=w["turnaround_ns"] * 1e-9 if w else None))
             m.connect(Link(f"bus.{n}" if k > 1 else f"bus{c}", n, router, per, duplex=False))
             names.append(n)
     m.interleave("ram", names)
@@ -84,7 +95,7 @@ def add_cpu(m: Machine, spec: dict | None, mts: float, channels: int, eff_dram: 
             m.connect(Link(f"ifop{d}", r, io, spec["ccd_read_bytes_per_fclk"] * fclk_mhz * 1e6 * eff_link, duplex=False))
             for t, n in spec["cores_per_ccd"].items():
                 g = f"{r}.{t}"
-                m.add(Compute(g, clock_hz=0.0, count=n))
+                m.add(Compute(g, clock_hz=0.0, count=n, outstanding=_queue(spec, t)))
                 bps = core_link_bps if core_link_bps is not None else core_link_from_queue(spec, t, lat)
                 m.connect(Link(f"{g}.link", g, r, bps, per_unit=True))
                 groups.append(g)
@@ -93,7 +104,7 @@ def add_cpu(m: Machine, spec: dict | None, mts: float, channels: int, eff_dram: 
         m.add(Router(io))
         _channels(m, io, mts, channels, eff_dram, cl, mem_type)
         for t, n in ((spec or {}).get("cores") or {"generic": 8}).items():
-            m.add(Compute(t, clock_hz=0.0, count=n))
+            m.add(Compute(t, clock_hz=0.0, count=n, outstanding=_queue(spec, t)))
             bps = core_link_bps if core_link_bps is not None else core_link_from_queue(spec, t, lat)
             m.connect(Link(f"{t}.link", t, io, bps, per_unit=True))
             groups.append(t)

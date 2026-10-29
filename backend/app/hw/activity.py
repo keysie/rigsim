@@ -13,7 +13,9 @@
   Fixed     a fixed time spent on a node before the step's activities (a kernel launch, a dispatch, a sync)
 
 A Step is a set of activities that run at the same time (plus its fixed costs, paid first); an engine describes its
-work as a sequence of steps. solve_step runs them on the graph: rates are solved jointly, and whenever an activity
+work as a sequence of steps. A step either needs the previous step's results (the default: it waits for them, so
+its transfers pay their path latency anew — a pointer chase) or does not (pipelined=True: its requests are issued
+while the previous step's are still under way, so the latency overlaps; batching still never crosses steps). solve_step runs them on the graph: rates are solved jointly, and whenever an activity
 finishes the others are re-solved with what it frees (progressive filling). Nothing in here knows a GPU, a CPU or an
 engine: what a part can do is only ever its model in the graph.
 """
@@ -62,6 +64,7 @@ class Step:
     label: str
     concurrent: list = field(default_factory=list)      # Transfer | Work
     fixed: list = field(default_factory=list)           # Fixed
+    pipelined: bool = False           # does not wait for the previous step's data: latency overlaps with it
 
 
 @dataclass
@@ -177,7 +180,8 @@ def solve_step(m: Machine, step: Step, cache: dict | None = None) -> StepTime:
     # a transfer starts after its path's latency and after the device time its storages spend on positioning and
     # switching direction for this step (the batching inside the step)
     over = _storage_overheads(m, list(acts.values()))
-    start = {a.id: _latency(m, a, cache) + max([over.get(mem, 0.0) for mem, _ in _ends(m, a)] or [0.0])
+    start = {a.id: (0.0 if step.pipelined else _latency(m, a, cache))
+                   + max([over.get(mem, 0.0) for mem, _ in _ends(m, a)] or [0.0])
              if isinstance(a, Transfer) else 0.0 for a in acts.values()}
     for a in acts.values():
         r, b = _rates(m, [a], cache)[a.id]

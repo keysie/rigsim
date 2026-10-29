@@ -6,12 +6,11 @@
                     after another; what a read costs — the memory's latency included — is the graph's.
                     Reported: time per access.
   max bandwidth     every core streams at once (MLC's default buffer per thread, all cores): one step with every
-                    core group reading — and for the mixes writing — the memory concurrently. Reported: bytes moved
-                    by the program per second (reads + writes), as MLC reports them.
-                    The mixes are MLC's read:write ratios (3:1, 2:1, 1:1; 'stream-triad like' = two reads, one
-                    write). Writes are transfers core -> memory over the same channels. What the graph does not
-                    contain yet: the bus turnaround between reads and writes and any write-allocate (RFO) read
-                    traffic — the predictions say so.
+                    core group reading — and for the mixes writing — the memory concurrently, cut into steps of
+                    what the cores have in flight at once (their miss queues). Reported: bytes moved by the program
+                    per second (reads + writes), as MLC reports them. The mixes are MLC's read:write ratios (3:1,
+                    2:1, 1:1; 'stream-triad like' = two reads, one write). How much a step's direction change costs
+                    is the memory's (storage turnaround); write-allocate (RFO) reads are not in the graph yet.
 """
 from __future__ import annotations
 
@@ -31,17 +30,34 @@ def idle_latency_s(m: Machine, core_group: str, memory: str = "ram") -> float:
     return total / CHASE
 
 
+def in_flight_lines(m: Machine, core_groups: list[str]) -> int | None:
+    """Cache lines all cores can have in flight at once (each unit's miss queue, a property of the cores in the
+    graph); None if any is not identified."""
+    qs = [(m.nodes[g].count, m.nodes[g].outstanding) for g in core_groups]
+    return None if any(q is None for _, q in qs) else sum(n * q for n, q in qs)
+
+
 def bandwidth_bps(m: Machine, core_groups: list[str], traffic: str = "all_reads", memory: str = "ram",
-                  bytes_per_group: float = 4e9) -> float:
-    """Program bytes per second with every core group reading (and writing) concurrently."""
+                  total_bytes: float = 4e9) -> tuple[float, str]:
+    """Program bytes per second with every core streaming, and how the steps were cut. One step = what all cores
+    have in flight at once (their miss queues), reads and writes in MLC's ratio, each core's share by its queue;
+    steps follow one another pipelined (a stream does not wait for its own data). Where a queue is not identified:
+    the whole stream as one step (the solver may then batch all of it — the optimistic case, stated)."""
     r, w = MIX[traffic]
+    lines = in_flight_lines(m, core_groups)
+    per_step = lines * LINE if lines else total_bytes
+    weight = {g: (m.nodes[g].count * m.nodes[g].outstanding if lines else m.nodes[g].count) for g in core_groups}
+    tot = sum(weight.values())
     acts = []
     for g in core_groups:
-        acts.append(Transfer(f"{g}.read", memory, g, bytes_per_group * r / (r + w)))
+        b = per_step * weight[g] / tot
+        acts.append(Transfer(f"{g}.read", memory, g, b * r / (r + w)))
         if w:
-            acts.append(Transfer(f"{g}.write", g, memory, bytes_per_group * w / (r + w)))
-    res = solve_step(m, Step(f"bandwidth {traffic}", acts))
-    return bytes_per_group * len(core_groups) / res.seconds
+            acts.append(Transfer(f"{g}.write", g, memory, b * w / (r + w)))
+    res = solve_step(m, Step(f"bandwidth {traffic}", acts, pipelined=True))
+    how = (f"steps of {lines} lines in flight ({per_step / 1024:.0f} KiB)" if lines
+           else "one step for the whole stream (miss queues not identified)")
+    return per_step / res.seconds, how
 
 
-NOT_IN_GRAPH = "bus turnaround between reads and writes and write-allocate (RFO) reads not modelled"
+NOT_IN_GRAPH = "write-allocate (RFO) reads not modelled"

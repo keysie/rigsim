@@ -66,8 +66,13 @@ def test_mlc_engine_on_the_machine(tmp_path):
     from app.system import build_system
     from tests.test_system import machine_run
     s = build_system(machine_run(tmp_path))
-    reads = mlc.bandwidth_bps(s.m, s.groups, "all_reads")
-    assert reads == pytest.approx(mlc.bandwidth_bps(s.m, s.groups, "1to1_rw"))      # no turnaround in the graph yet
+    reads, how = mlc.bandwidth_bps(s.m, s.groups, "all_reads")
+    mixed, _ = mlc.bandwidth_bps(s.m, s.groups, "1to1_rw")
+    assert mixed < reads and "512 lines in flight" in how            # each step turns the DDR5 bus once (JEDEC)
+    from app.hw import dram
+    w = dram.write_timing("ddr5", 5600, None)
+    assert w["cwl"] == w["cl"] - 2 and 25 < w["turnaround_ns"] < 40
+    assert s.m.nodes["p"].outstanding == 48 and s.m.nodes["e"].outstanding == 16
     assert 70e-9 < mlc.idle_latency_s(s.m, s.groups[0]) < 100e-9
 
 
@@ -112,3 +117,11 @@ def test_seek_once_sequential_per_request_random():
 def test_storage_shorthand_keeps_everything_else_unchanged():
     s = Storage("x", 1, bandwidth_bps=10.0, access_s=1.0, write_bps=5.0)
     assert (s.bps("read"), s.bps("write"), s.access("write")) == (10.0, 5.0, 1.0)
+
+
+def test_pipelined_steps_overlap_latency_dependent_ones_do_not():
+    m = small()
+    m.nodes["mem"].access_s = 100e-9
+    dep = solve_step(m, Step("dep", [Transfer("x", "mem", "a", 1000)])).seconds
+    pipe = solve_step(m, Step("pipe", [Transfer("x", "mem", "a", 1000)], pipelined=True)).seconds
+    assert dep == pytest.approx(100e-9 + 1000 / 100e9) and pipe == pytest.approx(1000 / 100e9)

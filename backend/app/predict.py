@@ -101,9 +101,9 @@ def predict(run: Path, measurements: list[dict]) -> tuple[list[dict], list[dict]
                                                                f"path latency in the graph, {cas}; {basis}"))
                 else:
                     note = "" if parts[2] == "all_reads" else f"; {mlc.NOT_IN_GRAPH}"
-                    preds.append(dict(key=key, value=mlc.bandwidth_bps(s.m, s.groups, parts[2]) / 1e9, unit="GB/s",
-                                      calibration=False, basis=f"MLC engine: every core group at once, {parts[2]}; "
-                                                               f"{basis}{note}"))
+                    bw, how = mlc.bandwidth_bps(s.m, s.groups, parts[2])
+                    preds.append(dict(key=key, value=bw / 1e9, unit="GB/s", calibration=False,
+                                      basis=f"MLC engine: every core group at once, {parts[2]}, {how}; {basis}{note}"))
             elif parts[0] == "mlc":
                 unsup.append(dict(key=key, reason="this MLC test is not modelled yet"))
             else:

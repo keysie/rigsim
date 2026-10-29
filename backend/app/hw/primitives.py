@@ -56,6 +56,7 @@ class Compute:
     clock_hz: float
     ops_per_clock: dict[str, float] = field(default_factory=dict)   # per unit, per operation class
     count: int = 1
+    outstanding: int | None = None    # memory requests one unit can have in flight (its miss queue); None = not identified
 
     def rate(self, op_class: str, units: int | None = None) -> float:
         n = self.count if units is None else min(units, self.count)
