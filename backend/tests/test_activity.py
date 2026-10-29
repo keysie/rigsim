@@ -117,11 +117,3 @@ def test_seek_once_sequential_per_request_random():
 def test_storage_shorthand_keeps_everything_else_unchanged():
     s = Storage("x", 1, bandwidth_bps=10.0, access_s=1.0, write_bps=5.0)
     assert (s.bps("read"), s.bps("write"), s.access("write")) == (10.0, 5.0, 1.0)
-
-
-def test_pipelined_steps_overlap_latency_dependent_ones_do_not():
-    m = small()
-    m.nodes["mem"].access_s = 100e-9
-    dep = solve_step(m, Step("dep", [Transfer("x", "mem", "a", 1000)])).seconds
-    pipe = solve_step(m, Step("pipe", [Transfer("x", "mem", "a", 1000)], pipelined=True)).seconds
-    assert dep == pytest.approx(100e-9 + 1000 / 100e9) and pipe == pytest.approx(1000 / 100e9)

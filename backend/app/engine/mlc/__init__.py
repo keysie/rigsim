@@ -41,8 +41,9 @@ def bandwidth_bps(m: Machine, core_groups: list[str], traffic: str = "all_reads"
                   total_bytes: float = 4e9) -> tuple[float, str]:
     """Program bytes per second with every core streaming, and how the steps were cut. One step = what all cores
     have in flight at once (their miss queues), reads and writes in MLC's ratio, each core's share by its queue;
-    steps follow one another pipelined (a stream does not wait for its own data). Where a queue is not identified:
-    the whole stream as one step (the solver may then batch all of it — the optimistic case, stated)."""
+    steps follow one another. Where a queue is not identified: the whole stream as one step (the solver may then
+    batch all of it — the optimistic case, stated). How a stream's steps overlap in a real core is open: deferred
+    until more machines are measured."""
     r, w = MIX[traffic]
     lines = in_flight_lines(m, core_groups)
     per_step = lines * LINE if lines else total_bytes
@@ -54,7 +55,7 @@ def bandwidth_bps(m: Machine, core_groups: list[str], traffic: str = "all_reads"
         acts.append(Transfer(f"{g}.read", memory, g, b * r / (r + w)))
         if w:
             acts.append(Transfer(f"{g}.write", g, memory, b * w / (r + w)))
-    res = solve_step(m, Step(f"bandwidth {traffic}", acts, pipelined=True))
+    res = solve_step(m, Step(f"bandwidth {traffic}", acts))
     how = (f"steps of {lines} lines in flight ({per_step / 1024:.0f} KiB)" if lines
            else "one step for the whole stream (miss queues not identified)")
     return per_step / res.seconds, how
