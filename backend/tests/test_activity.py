@@ -208,3 +208,24 @@ def test_cpu_budgets_on_a_published_machine():
     e = 1.5 * 0.886e-9                                                        # the Skylake-family constant per FMA + load
     assert gflops(6) == pytest.approx(65.0 / e * 16 / 1e9, rel=1e-6)         # power-bound: ~782 (471 measured)
     assert s.m.nodes["pkg.power"].watts == 65.0
+
+
+def test_llamacpp_cpu_engine(tmp_path):
+    from app.engine.llamacpp import cpu
+    from app.engine.model import from_config
+    from app.system import build_system
+    from tests.test_system import machine_run
+    run = machine_run(tmp_path)
+    (run / "inventory" / "lscpu.txt").write_text("CPU max MHz:                             5300.0000\n"
+                                                 "L3 cache:                                30 MiB (1 instance)\n")
+    s = build_system(run)
+    m = from_config("tinyllama-1.1b", "q4_0")
+    assert cpu.placement(s.m, s.groups, 8) == {"p": 8} and cpu.placement(s.m, s.groups, 10) == {"p": 8, "e": 2}
+    ops = cpu._ops(m, 512, 0, 1)
+    q = next(o for o in ops if o.name == "blk.0.attn_q")
+    assert [k for k, _ in q.works] == ["quantize_q8_0_4x8", "gemm_q4_0_8x8"]          # 512 columns: all in fours
+    assert next(o for o in cpu._ops(m, 1, 0, 1) if o.name == "blk.0.attn_q").works[1][0] == "gemv_q4_0_8x8"
+    assert next(o for o in ops if o.name == "output").works[1][0] == "vec_dot_q6_K_q8_K"  # Q6_K: not repacked
+    tg = cpu.llama_bench(s.m, s.groups, m, "tg2", 8)
+    pp = cpu.llama_bench(s.m, s.groups, m, "pp64", 8)
+    assert tg["threads"] == 8 and 0 < tg["tokens_per_s"] < pp["tokens_per_s"]
