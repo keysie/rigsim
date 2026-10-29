@@ -117,3 +117,16 @@ def test_seek_once_sequential_per_request_random():
 def test_storage_shorthand_keeps_everything_else_unchanged():
     s = Storage("x", 1, bandwidth_bps=10.0, access_s=1.0, write_bps=5.0)
     assert (s.bps("read"), s.bps("write"), s.access("write")) == (10.0, 5.0, 1.0)
+
+
+def test_likwid_engine_threads_and_directions(tmp_path):
+    from app.engine import likwid
+    from app.system import build_system
+    from tests.test_system import machine_run
+    s = build_system(machine_run(tmp_path))
+    assert likwid.placement(s.m, s.groups, 10) == {"p": 8, "e": 2} and likwid.placement(s.m, s.groups, 40) == {"p": 8, "e": 8}
+    one, how = likwid.bandwidth_bps(s.m, s.groups, "load_avx", 1)
+    eight, _ = likwid.bandwidth_bps(s.m, s.groups, "load_avx", 8)
+    assert one < eight and "1 threads on 1 p" in how and "3 KiB in flight" in how      # 48 lines of one P-core
+    nt, _ = likwid.bandwidth_bps(s.m, s.groups, "store_mem_avx", 8)
+    assert nt > 0 and "store_avx" in likwid.NOT_YET

@@ -18,7 +18,7 @@ import re
 import sys
 from pathlib import Path
 
-from .engine import mlc
+from .engine import likwid, mlc
 from .engine.llamacpp import cuda, vulkan
 from .engine.model import ARCHS, FILE_TYPES, from_config
 from .hw.execute import Op, execute
@@ -104,6 +104,18 @@ def predict(run: Path, measurements: list[dict]) -> tuple[list[dict], list[dict]
                     bw, how = mlc.bandwidth_bps(s.m, s.groups, parts[2])
                     preds.append(dict(key=key, value=bw / 1e9, unit="GB/s", calibration=False,
                                       basis=f"MLC engine: every core group at once, {parts[2]}, {how}; {basis}{note}"))
+            elif parts[0] == "cpu-mem-ladder" and len(parts) == 3:
+                kernel, threads = parts[1], int(parts[2])
+                if kernel in likwid.NOT_YET:
+                    unsup.append(dict(key=key, reason=likwid.NOT_YET[kernel])); continue
+                if kernel not in likwid.KERNELS:
+                    unsup.append(dict(key=key, reason=f"likwid kernel {kernel} not modelled")); continue
+                if s.cpu_why:
+                    unsup.append(dict(key=key, reason=s.cpu_why)); continue
+                bw, how = likwid.bandwidth_bps(s.m, s.groups, kernel, threads)
+                basis = ", ".join(f"{k} {v}" for k, v in s.cpu.items() if v is not None and k != "name")
+                preds.append(dict(key=key, value=bw / 1e9, unit="GB/s", calibration=False,
+                                  basis=f"likwid engine: {how}; {basis}"))
             elif parts[0] == "mlc":
                 unsup.append(dict(key=key, reason="this MLC test is not modelled yet"))
             else:
