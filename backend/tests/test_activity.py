@@ -191,3 +191,19 @@ def test_cpu_budgets_issue_ports_and_power():
     assert six.seconds == pytest.approx(1e10 * 2e-9 / 60.0) and six.bottleneck["w"] == "power:pkg.power"
     single = solve_step(p, Step("k", [Work("w", "core", "", 1e9, mix={"fma": 1}, units=1)]))
     assert single.bottleneck["w"] == "fma:core#w"                               # one core alone: its clock binds
+
+
+def test_cpu_budgets_on_a_published_machine():
+    """i7-8700: one core FMA-bound at its 4.6 GHz turbo; six cores throttled by the 65 W budget (calibrated)."""
+    import glob
+    from pathlib import Path
+    from app.system import build_system
+    runs = glob.glob("/home/claude/bench-repo/results/runs/*e963")
+    if not runs:
+        pytest.skip("published run not available")
+    s = build_system(Path(runs[0]))
+    sgemm = {"fma": 1, "load": 0.5}
+    gflops = lambda units: 16e9 / solve_step(s.m, Step("k", [Work("w", "core", "", 1e9, mix=sgemm, units=units)])).seconds / 1e9
+    assert gflops(1) == pytest.approx(4.6 * 32, rel=1e-6)                     # 147 GFLOP/s (137 measured)
+    assert 450 < gflops(6) < 560                                              # power-bound (471 measured)
+    assert s.m.nodes["pkg.power"].watts == 65.0
