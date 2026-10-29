@@ -217,3 +217,11 @@ changes should keep `backend/tests/test_validation.py` green or explain why the 
 ## License
 
 Apache License 2.0 — see `LICENSE` and `NOTICE`. Contributors in `CONTRIBUTORS.md`.
+
+## Commit messages
+
+Every commit follows [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/):
+`<type>[(<scope>)][!]: <description>`, type one of feat, fix, docs, style, refactor, perf, test, build, ci, chore,
+revert. CI checks every pushed and proposed commit (`.github/workflows/commits.yml`); locally, once per clone:
+`git config core.hooksPath .githooks` rejects a non-conforming message at commit time.
+
