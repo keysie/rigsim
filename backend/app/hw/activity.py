@@ -311,7 +311,7 @@ def _solve_flat(m: Machine, step: Step, cache: dict | None = None) -> StepTime:
              if isinstance(a, Transfer) else 0.0 for a in acts.values()}
     for a in acts.values():
         r, b = _rates(m, [a], cache)[a.id]
-        alone[a.id] = start[a.id] + (_amount(a) / r if r > 0 else float("inf"))
+        alone[a.id] = start[a.id] + (0.0 if r == float("inf") else _amount(a) / r if r > 0 else float("inf"))
         neck[a.id] = b
     t = 0.0
     waiting = dict(acts)
@@ -320,6 +320,11 @@ def _solve_flat(m: Machine, step: Step, cache: dict | None = None) -> StepTime:
         for i in [i for i in waiting if start[i] <= t + 1e-18]:
             acts[i] = waiting.pop(i)
         rates = _rates(m, list(acts.values()), cache) if acts else {}
+        for i in [i for i in acts if rates[i][0] == float("inf")]:      # nothing identified limits it: no time
+            finish[i] = t; neck[i] = rates[i][1] or "not limited (no capacity identified)"
+            del acts[i]
+        if not acts and not waiting:
+            break
         dt = min([(left[i] / rates[i][0] if rates[i][0] > 0 else float("inf")) for i in acts]
                  + [start[i] - t for i in waiting])
         if dt == float("inf"):

@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="680" height="520" viewBox="0 0 680 520" font-family="sans-serif">
+<title>The i7-8700's cores in rigsim: before and with this change</title>
+<style>
+.h{font-size:14px;font-weight:600;fill:#2c2c2a}.s{font-size:12px;fill:#5f5e5a}
+.core{fill:#eeedfe;stroke:#534ab7;stroke-width:.6}.box{fill:#f1efe8;stroke:#888780;stroke-width:.6}
+.mem{fill:#e1f5ee;stroke:#0f6e56;stroke-width:.6}.ln{stroke:#888780;stroke-width:.6;stroke-dasharray:4 3}
+</style>
+<rect width="680" height="520" fill="#ffffff"/>
+<text class="h" x="40" y="34">Before</text><text class="h" x="360" y="34">With this change</text>
+<rect class="core" x="40" y="56" width="280" height="80" rx="12"/>
+<text class="h" x="180" y="88" text-anchor="middle">6 cores (Coffee Lake)</text>
+<text class="s" x="180" y="110" text-anchor="middle">No clock, no rates</text>
+<line class="ln" x1="180" y1="136" x2="180" y2="440"/><text class="s" x="190" y="290">Per-core link: not identified</text>
+<rect class="core" x="360" y="56" width="280" height="370" rx="12"/>
+<text class="h" x="500" y="84" text-anchor="middle">6 cores (Coffee Lake)</text>
+<text class="s" x="500" y="104" text-anchor="middle">One node, each core with:</text>
+<rect class="box" x="380" y="116" width="240" height="44" rx="8"/><text class="h" x="500" y="136" text-anchor="middle">Max turbo clock</text><text class="s" x="500" y="153" text-anchor="middle">4.6 GHz (lscpu)</text>
+<rect class="box" x="380" y="170" width="114" height="44" rx="8"/><text class="h" x="437" y="190" text-anchor="middle">Loads</text><text class="s" x="437" y="207" text-anchor="middle">2 per clock</text>
+<rect class="box" x="506" y="170" width="114" height="44" rx="8"/><text class="h" x="563" y="190" text-anchor="middle">Vector ALU</text><text class="s" x="563" y="207" text-anchor="middle">3 per clock</text>
+<rect class="box" x="380" y="224" width="114" height="44" rx="8"/><text class="h" x="437" y="244" text-anchor="middle">Shuffle</text><text class="s" x="437" y="261" text-anchor="middle">1 per clock</text>
+<rect class="box" x="506" y="224" width="114" height="44" rx="8"/><text class="h" x="563" y="244" text-anchor="middle">Int multiply</text><text class="s" x="563" y="261" text-anchor="middle">2 per clock</text>
+<rect class="box" x="380" y="278" width="114" height="44" rx="8"/><text class="h" x="437" y="298" text-anchor="middle">FMA</text><text class="s" x="437" y="315" text-anchor="middle">2 per clock</text>
+<rect class="box" x="506" y="278" width="114" height="44" rx="8"/><text class="h" x="563" y="298" text-anchor="middle">Issue</text><text class="s" x="563" y="315" text-anchor="middle">4 per clock</text>
+<text class="s" x="500" y="352" text-anchor="middle">Classes run side by side; a kernel's</text>
+<text class="s" x="500" y="370" text-anchor="middle">slowest budget sets its time. All cores</text>
+<text class="s" x="500" y="388" text-anchor="middle">draw energy from one 65 W package budget.</text>
+<line class="ln" x1="500" y1="426" x2="500" y2="440"/>
+<rect class="mem" x="40" y="440" width="600" height="50" rx="8"/>
+<text class="h" x="340" y="462" text-anchor="middle">L3 cache 12 MiB</text><text class="s" x="340" y="479" text-anchor="middle">Write-back, write-allocate</text>
+</svg>

@@ -111,7 +111,16 @@ def lscpu_topology(run: Path) -> dict:
         if len(cols) >= 5 and cols[0].isdigit():
             cores.add(f"{cols[2]}:{cols[3]}")
             l3.add(f"{cols[2]}:{cols[4].split(':')[-1]}")
-    return dict(cores=len(cores), l3_slices=len(l3))
+    slices = len(l3)
+    if any(":" not in x.split(":", 1)[-1] and not x.split(":")[-1].isdigit() for x in l3) or not slices:
+        slices = 0
+    if slices <= 1:
+        # the stick before 0.13.0 masked lscpu -e's cache column as an IPv6 address: the L3 count from lscpu
+        f2 = run / "inventory" / "lscpu.txt"
+        mm = re.search(r"^L3 cache:.*\((\d+) instances?\)", f2.read_text(errors="replace"), re.M) if f2.exists() else None
+        if mm:
+            slices = int(mm.group(1))
+    return dict(cores=len(cores), l3_slices=max(slices, 1) if cores else 0)
 
 
 def dimms(run: Path) -> list[dict]:

@@ -19,7 +19,7 @@ import sys
 from pathlib import Path
 
 from .engine import likwid, mlc
-from .engine.llamacpp import cuda, vulkan
+from .engine.llamacpp import cpu, cuda, vulkan
 from .engine.model import ARCHS, FILE_TYPES, from_config
 from .hw.execute import Op, execute
 from .hw.machine import Read
@@ -80,6 +80,21 @@ def predict(run: Path, measurements: list[dict]) -> tuple[list[dict], list[dict]
                 r = eng.llama_bench(s.m, gid, mdl, parts[4])
                 preds.append(dict(key=key, value=r["tokens_per_s"], unit="tok/s", calibration=False,
                                   basis=_basis_engine("CUDA" if eng is cuda else "Vulkan", s, gid, r)))
+            elif parts[0] == "llama-bench" and parts[1] == "cpu":
+                mdl = model_for(parts[3])
+                if s.cpu_why:
+                    unsup.append(dict(key=key, reason=s.cpu_why)); continue
+                if not mdl:
+                    unsup.append(dict(key=key, reason=f"model architecture not described: {parts[3]}")); continue
+                if not s.m.nodes[s.groups[0]].ops_per_clock:
+                    unsup.append(dict(key=key, reason="core microarchitecture or clock not identified")); continue
+                threads = int(c.get("n_threads") or sum(s.m.nodes[g].count for g in s.groups))
+                r = cpu.llama_bench(s.m, s.groups, mdl, parts[4], threads)
+                basis = ", ".join(f"{k} {v}" for k, v in s.cpu.items() if v is not None and k != "name")
+                preds.append(dict(key=key, value=r["tokens_per_s"], unit="tok/s", calibration=False,
+                                  basis=f"llama.cpp {cpu.VERSION} CPU engine (AVX2 build), {r['threads']} threads on "
+                                        f"{', '.join(f'{n} {g}' for g, n in r['placement'].items())}; " + ", ".join(f"{k} {v:.0%}" for k, v in r["share"].items())
+                                        + f"; {basis}"))
             elif parts[0] == "llama-bench":
                 unsup.append(dict(key=key, reason=f"llama.cpp {parts[1]} backend not modelled yet"))
             elif parts[0] == "gpu-vram" and len(parts) == 3 and parts[2] in ("read", "write", "copy"):
