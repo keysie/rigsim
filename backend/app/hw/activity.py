@@ -5,6 +5,9 @@
             with every other flow that runs. Every transfer first waits its path's latency — the storage's access
             time, links and routers — which is the hardware's, never the engine's choice. An engine whose accesses
             depend on each other (a pointer chase) expresses that as steps one after another.
+            The engine states one more thing: how its operations access the storage — 'sequential' (one stream:
+            the storage positions once) or 'random' (requests of request_bytes each, every one positioned anew).
+            Reading and writing speeds, latencies, seek and the read/write switch are the storage's (primitives).
   Work      operations of one class on a compute node — its units at its clock, at the efficiency the engine's
             kernel reaches (the engine's software fact; the peak is the node's)
   Fixed     a fixed time spent on a node before the step's activities (a kernel launch, a dispatch, a sync)
@@ -19,7 +22,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from .machine import Machine, Transfer as Flow, solve_transfers
-from .primitives import Compute
+from .primitives import Compute, Storage
 
 EPS = 1e-15
 
@@ -31,6 +34,8 @@ class Transfer:
     dst: str
     bytes: float
     units: int | None = None          # units of the compute at either end (None: all)
+    pattern: str = "sequential"       # 'sequential' | 'random' — the one access property an engine states
+    request_bytes: float | None = None  # size of one operation's request (random: each positions anew)
 
 
 @dataclass
@@ -102,6 +107,43 @@ def _rates(m: Machine, acts: list, cache: dict) -> dict[str, tuple[float, str]]:
     return out
 
 
+def _ends(m: Machine, a: Transfer) -> list[tuple[str, str]]:
+    """(storage member, direction) a transfer touches: its source is read, its destination written."""
+    out = []
+    for end, direction in ((a.src, "read"), (a.dst, "write")):
+        for mem in m.interleaved.get(end, [end]):
+            if isinstance(m.nodes.get(mem), Storage):
+                out.append((mem, direction))
+    return out
+
+
+def _storage_overheads(m: Machine, acts: list) -> dict[str, float]:
+    """Device time a step costs each storage beyond moving its bytes, with the best batching inside the step: every
+    read, then every write — one switch if both happen — and positioning: once per sequential transfer, once per
+    request of a random one (spread over an interleaved set's members). The solver never batches across steps."""
+    dirs: dict[str, set] = {}
+    seeks: dict[str, float] = {}
+    for a in acts:
+        if not isinstance(a, Transfer):
+            continue
+        ends = _ends(m, a)
+        for mem, direction in ends:
+            dirs.setdefault(mem, set()).add(direction)
+            per_member = len([e for e in ends if e[1] == direction])
+            if a.pattern == "random":
+                n = max(1.0, a.bytes / a.request_bytes) if a.request_bytes else 1.0
+                seeks[mem] = seeks.get(mem, 0.0) + n / max(per_member, 1)
+            else:
+                seeks[mem] = seeks.get(mem, 0.0) + 1.0
+    out = {}
+    for mem, ds in dirs.items():
+        st = m.nodes[mem]
+        o = (st.turnaround_s or 0.0) * (1 if len(ds) == 2 else 0) + (st.seek_s or 0.0) * seeks.get(mem, 0.0)
+        if o:
+            out[mem] = o
+    return out
+
+
 def _latency(m: Machine, a, cache: dict) -> float:
     """A transfer's path latency (storage access + links + routers), from the graph. Where a part's latency is not
     identified (e.g. a card's VRAM access time, not on spec sheets) it adds nothing — non-binding, like any
@@ -110,9 +152,12 @@ def _latency(m: Machine, a, cache: dict) -> float:
         return 0.0
     key = ("latency", a.src, a.dst)
     if key not in cache:
-        comp, store = (a.src, a.dst) if isinstance(m.nodes.get(a.src), Compute) else (a.dst, a.src)
+        writes = isinstance(m.nodes.get(a.src), Compute)
+        comp, store = (a.src, a.dst) if writes else (a.dst, a.src)
         try:
-            cache[key] = m.idle_latency_s(comp, store) if isinstance(m.nodes.get(comp), Compute) else 0.0
+            # positioning is charged as the storage's device time for the step (_storage_overheads), not twice
+            cache[key] = (m.idle_latency_s(comp, store, "write" if writes else "read", seek=False)
+                          if isinstance(m.nodes.get(comp), Compute) else 0.0)
         except (ValueError, KeyError):
             cache[key] = 0.0
     return cache[key]
@@ -129,7 +174,11 @@ def solve_step(m: Machine, step: Step, cache: dict | None = None) -> StepTime:
     acts = {a.id: a for a in step.concurrent if left[a.id] > 0}
     finish = {a.id: 0.0 for a in step.concurrent if left[a.id] <= 0}
     alone, neck = {}, {}
-    start = {a.id: _latency(m, a, cache) for a in acts.values()}
+    # a transfer starts after its path's latency and after the device time its storages spend on positioning and
+    # switching direction for this step (the batching inside the step)
+    over = _storage_overheads(m, list(acts.values()))
+    start = {a.id: _latency(m, a, cache) + max([over.get(mem, 0.0) for mem, _ in _ends(m, a)] or [0.0])
+             if isinstance(a, Transfer) else 0.0 for a in acts.values()}
     for a in acts.values():
         r, b = _rates(m, [a], cache)[a.id]
         alone[a.id] = start[a.id] + (_amount(a) / r if r > 0 else float("inf"))

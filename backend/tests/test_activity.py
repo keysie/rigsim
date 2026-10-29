@@ -69,3 +69,46 @@ def test_mlc_engine_on_the_machine(tmp_path):
     reads = mlc.bandwidth_bps(s.m, s.groups, "all_reads")
     assert reads == pytest.approx(mlc.bandwidth_bps(s.m, s.groups, "1to1_rw"))      # no turnaround in the graph yet
     assert 70e-9 < mlc.idle_latency_s(s.m, s.groups[0]) < 100e-9
+
+
+def storage_machine(**kw):
+    m = Machine()
+    m.add(Router("r"))
+    m.add(Storage("disk", capacity_b=1e12, bandwidth_bps=None, access_s=None, **kw))
+    m.connect(Link("bus", "disk", "r", None))
+    m.add(Compute("c", clock_hz=1e9, count=1))
+    m.connect(Link("c.link", "c", "r", None))
+    return m
+
+
+def test_writing_slower_than_reading_shares_the_device_at_its_own_speeds():
+    m = storage_machine(read_bps=100e6, write_bps=50e6)
+    assert solve_step(m, Step("w", [Transfer("w", "c", "disk", 50e6)])).seconds == pytest.approx(1.0)
+    both = solve_step(m, Step("rw", [Transfer("r", "disk", "c", 100e6), Transfer("w", "c", "disk", 50e6)]))
+    assert both.seconds == pytest.approx(2.0)                   # 1 s of reading + 1 s of writing on one device
+
+
+def test_small_mixed_steps_pay_the_switch_every_step_large_ones_once():
+    m = storage_machine(read_bps=1e9, write_bps=1e9, turnaround_s=1e-6)
+    small = Step("3r1w", [Transfer("r", "disk", "c", 3 * 64e3), Transfer("w", "c", "disk", 64e3)])
+    t_small = 1000 * solve_step(m, small).seconds                              # the engine's 1000 small steps
+    big = Step("big", [Transfer("r", "disk", "c", 1000 * 3 * 64e3), Transfer("w", "c", "disk", 1000 * 64e3)])
+    t_big = solve_step(m, big).seconds
+    data = 1000 * 4 * 64e3 / 1e9
+    assert t_big == pytest.approx(data + 1e-6) and t_small == pytest.approx(data + 1000 * 1e-6)
+    only_reads = Step("r", [Transfer("r", "disk", "c", 64e3)])
+    assert solve_step(m, only_reads).seconds == pytest.approx(64e3 / 1e9)       # no switch without a write
+
+
+def test_seek_once_sequential_per_request_random():
+    m = storage_machine(read_bps=200e6, write_bps=200e6, read_access_s=0.0, seek_s=8e-3)   # an HDD
+    seq = solve_step(m, Step("seq", [Transfer("r", "disk", "c", 400e6)])).seconds
+    rnd = solve_step(m, Step("rnd", [Transfer("r", "disk", "c", 400e6, pattern="random", request_bytes=4096)])).seconds
+    assert seq == pytest.approx(2.0 + 8e-3)                     # positioned once, then the data
+    n = 400e6 / 4096
+    assert rnd == pytest.approx(2.0 + n * 8e-3)                 # positioned for every request
+
+
+def test_storage_shorthand_keeps_everything_else_unchanged():
+    s = Storage("x", 1, bandwidth_bps=10.0, access_s=1.0, write_bps=5.0)
+    assert (s.bps("read"), s.bps("write"), s.access("write")) == (10.0, 5.0, 1.0)

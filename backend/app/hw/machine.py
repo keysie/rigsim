@@ -71,15 +71,17 @@ class Machine:
             n = p
         return list(reversed(hops))
 
-    def idle_latency_s(self, compute: str, storage: str) -> float:
-        """One access with nothing else running: link and router latencies on the path plus the storage's access time.
-        For an interleaved set: the mean over its members (one access lands on one of them)."""
+    def idle_latency_s(self, compute: str, storage: str, direction: str = "read", seek: bool = True) -> float:
+        """One access with nothing else running: link and router latencies on the path plus the storage's positioning
+        (seek) and access time for that direction. For an interleaved set: the mean over its members."""
         if storage in self.interleaved:
             members = self.interleaved[storage]
-            return sum(self.idle_latency_s(compute, s) for s in members) / len(members)
-        t = self.nodes[storage].access_s
+            return sum(self.idle_latency_s(compute, s, direction, seek) for s in members) / len(members)
+        st = self.nodes[storage]
+        t = st.access(direction)
         if t is None:
             raise ValueError(f"access time of {storage} not identified")
+        t += (st.seek_s or 0.0) if seek else 0.0
         for l, reached in self.path(compute, storage):
             t += l.latency_s
             node = self.nodes[reached]
@@ -125,11 +127,11 @@ class Machine:
                             key = f"router:{node.id}"
                             capacity[key] = node.forward_bps; used[key] = used.get(key, 0.0) + share
                     src = reached
-                if st.bandwidth_bps is None:
+                if st.bps("read") is None:
                     unknown.append(st.id)
                 else:
                     key = f"storage:{st.id}"
-                    capacity[key] = st.bandwidth_bps; used[key] = used.get(key, 0.0) + share
+                    capacity[key] = st.bps("read"); used[key] = used.get(key, 0.0) + share
             flows[rd.id] = (float(units), used, own_cap)
             unidentified[rd.id] = sorted(set(unknown))
         rates, bottleneck = max_min_fair_share(capacity, flows)
@@ -179,14 +181,17 @@ def _resources_along(m: "Machine", src: str, dst: str, share: float, units: int,
                 key = f"cycles:{cpu.id}"
                 capacity[key] = cpu.clock_hz * cpu.count; used[key] = used.get(key, 0.0) + share * node.cycles_per_byte
         here = reached
-    for end in (src, dst):
+    # a storage's time is its capacity: a read uses 1/read_bps of it per byte, a write 1/write_bps — so reads and
+    # writes through one storage share it at their own speeds
+    for end, direction in ((src, "read"), (dst, "write")):
         st = m.nodes[end]
         if isinstance(st, Storage):
-            if st.bandwidth_bps is None:
+            bw = st.bps(direction)
+            if bw is None:
                 unknown.append(st.id)
-            else:
+            elif bw > 0:
                 key = f"storage:{st.id}"
-                capacity[key] = st.bandwidth_bps; used[key] = used.get(key, 0.0) + share
+                capacity[key] = 1.0; used[key] = used.get(key, 0.0) + share / bw
     return own_cap
 
 
