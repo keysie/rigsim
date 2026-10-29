@@ -2,8 +2,9 @@
 (hw/activity.py). It knows nothing about the hardware beyond the graph's names for core groups and memory.
 
   idle latency      one core, a chain of dependent 64-byte reads across a buffer far larger than the caches
-                    (MLC's pointer chase): each read waits for the previous, so each is a transfer that first waits
-                    the path's idle latency. Reported: time per access.
+                    (MLC's pointer chase): each read needs the previous one's data, so each is its own step, one
+                    after another; what a read costs — the memory's latency included — is the graph's.
+                    Reported: time per access.
   max bandwidth     every core streams at once (MLC's default buffer per thread, all cores): one step with every
                     core group reading — and for the mixes writing — the memory concurrently. Reported: bytes moved
                     by the program per second (reads + writes), as MLC reports them.
@@ -23,10 +24,11 @@ MIX = {"all_reads": (1, 0), "3to1_rw": (3, 1), "2to1_rw": (2, 1), "1to1_rw": (1,
 
 
 def idle_latency_s(m: Machine, core_group: str, memory: str = "ram") -> float:
-    """Seconds per access of a dependent read chain from one core."""
-    step = Step("pointer chase", [Transfer("access", memory, core_group, LINE, units=1, latency=True)])
-    one = solve_step(m, step).seconds
-    return one * CHASE / CHASE                # every access alike: the chain's time is CHASE x one
+    """Seconds per access of a dependent read chain from one core: CHASE reads, each a step after the previous."""
+    cache: dict = {}
+    total = sum(solve_step(m, Step(f"read {i}", [Transfer("read", memory, core_group, LINE, units=1)]), cache).seconds
+                for i in range(CHASE))
+    return total / CHASE
 
 
 def bandwidth_bps(m: Machine, core_groups: list[str], traffic: str = "all_reads", memory: str = "ram",

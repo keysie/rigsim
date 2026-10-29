@@ -55,8 +55,8 @@ def test_latency_and_writes():
     m = small()
     m.nodes["mem"].access_s = 80e-9
     m.links["bus"].latency_s = 5e-9
-    r = solve_step(m, Step("chase", [Transfer("x", "mem", "a", 64, units=1, latency=True)]))
-    assert r.seconds == pytest.approx(85e-9 + 64 / 100e9)                         # wait the path, then the line
+    r = solve_step(m, Step("read", [Transfer("x", "mem", "a", 64, units=1)]))
+    assert r.seconds == pytest.approx(85e-9 + 64 / 100e9)        # the hardware's latency, then the line — always
     both = solve_step(m, Step("rw", [Transfer("r", "mem", "a", 10e9), Transfer("w", "a", "mem", 10e9)]))
     assert both.seconds == pytest.approx(0.2)                                     # one simplex bus: shared
 

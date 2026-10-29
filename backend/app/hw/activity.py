@@ -2,8 +2,9 @@
 
   Transfer  bytes from a storage to a compute (its units read them), from a compute to a storage (they write) or
             between storages — a flow through the graph's links, routers and storages, sharing them max-min fairly
-            with every other flow that runs. With latency=True it first waits the path's idle latency (links,
-            routers, the storage's access time): an access that cannot start before the previous one returned
+            with every other flow that runs. Every transfer first waits its path's latency — the storage's access
+            time, links and routers — which is the hardware's, never the engine's choice. An engine whose accesses
+            depend on each other (a pointer chase) expresses that as steps one after another.
   Work      operations of one class on a compute node — its units at its clock, at the efficiency the engine's
             kernel reaches (the engine's software fact; the peak is the node's)
   Fixed     a fixed time spent on a node before the step's activities (a kernel launch, a dispatch, a sync)
@@ -30,7 +31,6 @@ class Transfer:
     dst: str
     bytes: float
     units: int | None = None          # units of the compute at either end (None: all)
-    latency: bool = False             # wait the path's idle latency before the bytes flow
 
 
 @dataclass
@@ -102,13 +102,20 @@ def _rates(m: Machine, acts: list, cache: dict) -> dict[str, tuple[float, str]]:
     return out
 
 
-def _latency(m: Machine, a) -> float:
-    """The path's idle latency for a Transfer that waits for it (storage access + links + routers)."""
-    if not (isinstance(a, Transfer) and a.latency):
+def _latency(m: Machine, a, cache: dict) -> float:
+    """A transfer's path latency (storage access + links + routers), from the graph. Where a part's latency is not
+    identified (e.g. a card's VRAM access time, not on spec sheets) it adds nothing — non-binding, like any
+    unidentified capacity."""
+    if not isinstance(a, Transfer):
         return 0.0
-    if isinstance(m.nodes.get(a.src), Compute):
-        return m.idle_latency_s(a.src, a.dst)
-    return m.idle_latency_s(a.dst, a.src)
+    key = ("latency", a.src, a.dst)
+    if key not in cache:
+        comp, store = (a.src, a.dst) if isinstance(m.nodes.get(a.src), Compute) else (a.dst, a.src)
+        try:
+            cache[key] = m.idle_latency_s(comp, store) if isinstance(m.nodes.get(comp), Compute) else 0.0
+        except (ValueError, KeyError):
+            cache[key] = 0.0
+    return cache[key]
 
 
 def _amount(a) -> float:
@@ -122,7 +129,7 @@ def solve_step(m: Machine, step: Step, cache: dict | None = None) -> StepTime:
     acts = {a.id: a for a in step.concurrent if left[a.id] > 0}
     finish = {a.id: 0.0 for a in step.concurrent if left[a.id] <= 0}
     alone, neck = {}, {}
-    start = {a.id: _latency(m, a) for a in acts.values()}
+    start = {a.id: _latency(m, a, cache) for a in acts.values()}
     for a in acts.values():
         r, b = _rates(m, [a], cache)[a.id]
         alone[a.id] = start[a.id] + (_amount(a) / r if r > 0 else float("inf"))
