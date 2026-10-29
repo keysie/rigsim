@@ -37,7 +37,7 @@ def test_predictions_and_reasons(tmp_path):
     assert 100 < by["llama-bench/cuda/gpu0/llama-2-7b-q4_0/tg128"]["value"] < 200
     assert 600 < by["gpu-vram/gpu0/read"]["value"] < 800 and all(p["calibration"] is False for p in preds)
     reasons = {u["key"]: u["reason"] for u in unsup}
-    assert "vulkan backend not modelled" in reasons["llama-bench/vulkan/dev0/llama-2-7b-q4_0/tg128"]
+    assert "not a catalogued GPU" in reasons["llama-bench/vulkan/dev0/llama-2-7b-q4_0/tg128"]
     assert "model architecture not described" in reasons["llama-bench/cuda/gpu0/mistral-7b-q4_0/tg128"]
     assert "CPU not in rigsim's catalogue" in reasons["mlc/idle_latency"]
 
@@ -98,7 +98,7 @@ def test_inventory_cpu_and_memory(tmp_path):
     by = {p["key"]: p["value"] for p in preds}
     assert 70 < by["mlc/idle_latency"] < 100                   # 16 ns CAS + the global fixed term
     assert 60 < by["mlc/max_bandwidth/all_reads"] < 89.6        # below the 2 x 44.8 GB/s peak
-    assert "write traffic" in unsup[0]["reason"]
+    assert not unsup and "lines in flight" in next(p for p in preds if p["key"].endswith("3to1_rw"))["basis"]
 
 
 def test_cpu_memory_reasons(tmp_path):
@@ -160,3 +160,47 @@ def test_ryzen_predictions(tmp_path):
     assert 30 < preds[0]["value"] < 51.2                                             # below 2 x 25.6 GB/s peak
     apu = amd_run(tmp_path / "apu", "AMD Ryzen 5 5600G with Radeon Graphics", cores=6, l3=1)
     assert P.cpu_memory_machine(apu)[2]["cpu"] == "cezanne" and P.cpu_memory_machine(apu)[2]["fclk_mhz"] is None
+
+
+
+def test_vram_write_and_copy(tmp_path):
+    run = fake_run(tmp_path)
+    preds, unsup = P.predict(run, [dict(key=f"gpu-vram/gpu0/{op}", value=1.0, unit="GB/s", conditions={})
+                                   for op in ("read", "write", "copy")])
+    assert not unsup and len({round(p["value"], 3) for p in preds}) == 1
+    assert "bus turnaround not modelled" in next(p for p in preds if p["key"].endswith("copy"))["basis"]
+
+
+def test_vulkan_engine_by_pci(tmp_path):
+    run = fake_run(tmp_path)
+    meas = [dict(key="llama-bench/vulkan/dev0/llama-2-7b-q4_0/tg128", value=140.0, unit="tok/s",
+                 conditions=dict(pci="0000:01:00.0", gpu="NVIDIA GeForce RTX 3080")),
+            dict(key="llama-bench/vulkan/dev1/llama-2-7b-q4_0/tg128", value=5.8, unit="tok/s",
+                 conditions=dict(pci="0000:00:02.0", gpu="Intel(R) Graphics (RPL-S)"))]
+    preds, unsup = P.predict(run, meas)
+    assert len(preds) == 1 and 100 < preds[0]["value"] < 200 and "Vulkan engine" in preds[0]["basis"]
+    assert "not a catalogued GPU (Intel(R) Graphics (RPL-S))" in unsup[0]["reason"]
+    from app.engine.llamacpp import vulkan
+    from app.engine.model import from_config
+    ops = vulkan.cuda.forward(from_config("tinyllama-1.1b", "q4_0"), 1, 0, matmul=vulkan.matmul, attention=vulkan.attention)
+    q = next(o for o in ops if o.name == "blk.0.attn_q")
+    assert q.factor_basis.startswith("vulkan mmv") and q.kernels == 1         # dequantising mat-vec, no quantise kernel
+
+
+def test_intel_igpu_from_the_run(tmp_path):
+    from app.hw import intel_igpu as I
+    assert I.product("Intel Corporation Raptor Lake-S GT1 [UHD Graphics 770] [8086:a780] (rev 04)") == "UHD Graphics 770"
+    assert I.product("Intel Corporation HD Graphics 630") == "HD Graphics 630" and I.product("NVIDIA GeForce RTX 3080") is None
+    run = cpu_run(tmp_path)
+    hw = json.loads((run / "run.json").read_text())
+    hw["hardware"]["gpus"] = ["Intel Corporation Raptor Lake-S GT1 [UHD Graphics 770] [8086:a780] (rev 04)"]
+    (run / "run.json").write_text(json.dumps(hw))
+    (run / "samples-drm.jsonl").write_text("".join(json.dumps(dict(t=i, pci="0000:00:02.0", gt_mhz=v)) + "\n"
+                                                    for i, v in enumerate([300, 1600, 1550, 0])))
+    assert P.igpu_clock_mhz(run, "0000:00:02.0") == 1600
+    meas = [dict(key="llama-bench/vulkan/dev1/llama-2-7b-q4_0/tg128", value=5.8, unit="tok/s",
+                 conditions=dict(pci="0000:00:02.0", gpu="Intel(R) Graphics (RPL-S)"))]
+    preds, unsup = P.predict(run, meas)
+    assert not unsup and "(igpu, 0000:00:02.0)" in preds[0]["basis"]
+    spec = __import__("app.hw.gpus", fromlist=["GPUS"]).GPUS[next(k for k in __import__("app.hw.gpus", fromlist=["GPUS"]).GPUS if k.startswith("intel-uhd-graphics-770@ddr5-5600"))]
+    assert spec["mem_controllers"] == 4 and spec["matrix_units"] is False and spec["sms"] == 32

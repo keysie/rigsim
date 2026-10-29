@@ -51,3 +51,35 @@ def efficiency(mem_type: str, mts: float, density_gbit: int | None = None, trefi
 def clocks_to_ns(clocks: float, mts: float) -> float:
     """Timings stated in memory clocks (BIOS / OC tools) to ns."""
     return clocks * 2000.0 / mts
+
+
+# JEDEC write timings (JESD79-4 DDR4, JESD79-5 DDR5): write latency CWL, write-to-read delay tWTR_L, and the
+# read-to-write turnaround RL + BL/2 + 2 - WL. DDR4 CWL per speed bin (the lower option of each bin; above 3200,
+# beyond JEDEC, scaled with the clock); DDR5 CWL = CL - 2. When the module's CL is not known (no SPD), the bin's
+# typical tAA gives it (DDR4 13.75 ns, DDR5 16 ns).
+WRITE = {
+    "ddr4": dict(twtr_l_ns=7.5, twtr_l_min_nck=4, taa_ns=13.75,
+                 cwl={1600: 9, 1866: 10, 2133: 11, 2400: 12, 2666: 14, 2933: 16, 3200: 16}),
+    "ddr5": dict(twtr_l_ns=10.0, twtr_l_min_nck=16, taa_ns=16.0, cwl=None),
+}
+
+
+def write_timing(mem_type: str, mts: float, cl: int | None = None) -> dict | None:
+    """CWL and the time a full read -> write -> read direction change costs one (sub-)channel, in ns. None for an
+    unknown memory type (the storage then stays symmetric)."""
+    w, j = WRITE.get(mem_type), JEDEC.get(mem_type)
+    if not w:
+        return None
+    tck = 2000.0 / mts
+    cl = cl or math.ceil(w["taa_ns"] / tck - 1e-9)
+    if w["cwl"]:
+        bins = sorted(w["cwl"])
+        b = max([x for x in bins if x <= mts] or [bins[0]])
+        cwl = w["cwl"][b] if mts <= bins[-1] else math.ceil(w["cwl"][bins[-1]] * mts / bins[-1])
+    else:
+        cwl = cl - 2
+    burst = j["burst_nck"]
+    twtr = max(w["twtr_l_min_nck"], math.ceil(w["twtr_l_ns"] / tck - 1e-9))
+    w2r = cwl + burst + twtr                                 # write data, then wait before the next read
+    r2w = cl + burst + 2 - cwl                               # read data, then turn the bus for a write
+    return dict(cl=cl, cwl=cwl, cwl_ns=cwl * tck, turnaround_ns=(w2r + r2w) * tck, twtr_nck=twtr)

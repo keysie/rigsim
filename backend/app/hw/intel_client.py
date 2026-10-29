@@ -14,6 +14,9 @@ Sources:
     DDR5-5600 for i5-13600 and above, DDR5-4800 below / DDR4-3200; two channels throughout;
   - core types: Intel product briefs — hybrid P + E cores from 12th gen (Golden Cove + Gracemont; 13th: Raptor
     Cove + Gracemont); before, one core type (Skylake cores through 10th gen, Cypress Cove on 11th).
+  - memory requests in flight per core (Intel Architecture Day 2021, AnandTech's write-up): Golden Cove 48 ("grown
+    from 32" — the Sunny / Cypress Cove figure, used for 11th gen); Gracemont 64 per four-core module = 16 per core;
+    Raptor Cove taken as Golden Cove's. 6th-10th gen: not identified.
 """
 from __future__ import annotations
 
@@ -27,10 +30,12 @@ GENERATIONS = {
     9: dict(codename="coffeelake-s-refresh", core_types={"core": "coffeelake"}, mem=dict(ddr4=2666), mem_i3=dict(ddr4=2400)),
     10: dict(codename="cometlake-s", core_types={"core": "cometlake"}, mem=dict(ddr4=2933), mem_i3=dict(ddr4=2666),
              mem_i5=dict(ddr4=2666)),
-    11: dict(codename="rocketlake-s", core_types={"core": "cypresscove"}, mem=dict(ddr4=3200), mem_i3=dict(ddr4=2666)),
-    12: dict(codename="alderlake-s", core_types={"p": "goldencove", "e": "gracemont"}, mem=dict(ddr5=4800, ddr4=3200)),
+    11: dict(codename="rocketlake-s", core_types={"core": "cypresscove"}, mem=dict(ddr4=3200), mem_i3=dict(ddr4=2666),
+             queue={"core": 32}),
+    12: dict(codename="alderlake-s", core_types={"p": "goldencove", "e": "gracemont"}, mem=dict(ddr5=4800, ddr4=3200),
+             queue={"p": 48, "e": 16}),
     13: dict(codename="raptorlake-s", core_types={"p": "raptorcove", "e": "gracemont"}, mem=dict(ddr5=5600, ddr4=3200),
-             mem_below_13600=dict(ddr5=4800, ddr4=3200)),
+             mem_below_13600=dict(ddr5=4800, ddr4=3200), queue={"p": 48, "e": 16}),
 }
 CHANNELS = 2
 SOURCE = ("Intel support article 000094585 (memory per generation and tier, two channels); Intel product briefs "
@@ -70,6 +75,8 @@ def spec(cpu: str, cores: dict[str, int]) -> dict | None:
         cores = {"core": sum(cores.values())}
     else:
         cores = {t: cores.get(t, 0) for t in types if cores.get(t, 0)}
+    queue = {t: q for t, q in (info.get("queue") or {}).items() if t in cores}
     return dict(arch=info["codename"], topology="monolithic", cores=cores, channels=CHANNELS, generation=gen,
+                outstanding_misses_per_core=queue or None,
                 core_uarch={t: types[t] for t in cores}, memory_support=memory_support(gen, tier, number),
                 source=SOURCE)

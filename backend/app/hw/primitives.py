@@ -10,18 +10,43 @@ from dataclasses import dataclass, field
 
 @dataclass
 class Storage:
-    """Capacity, access time, bandwidth. Nothing more (access patterns are the engine's to state).
-    access_s None = not identified (latency results that need it say so)."""
+    """Any storage — a cache, DRAM, VRAM, an SSD, an HDD — with one set of parameters, each per direction where
+    devices differ. None = not identified: the solver treats it as non-binding / zero and results say so.
+
+      bandwidth_bps / access_s   shorthand for both directions (read_* / write_* override them)
+      read_bps, write_bps        streaming limits per direction
+      read_access_s, write_access_s   latency of one access per direction (DRAM: CL / CWL plus the fixed path)
+      seek_s                     positioning before an access: 0 for RAM, small for SSDs, milliseconds for HDDs —
+                                 paid once by a sequential transfer, per request by a random one; it occupies the
+                                 device
+      turnaround_s               switching between reading and writing; it occupies the device
+
+    The solver batches what one step asks of a storage as well as it can (all reads, then all writes: one switch);
+    it never batches across steps."""
     id: str
     capacity_b: float
     bandwidth_bps: float | None
     access_s: float | None
+    read_bps: float | None = None
+    write_bps: float | None = None
+    read_access_s: float | None = None
+    write_access_s: float | None = None
+    seek_s: float | None = None
+    turnaround_s: float | None = None
+
+    def bps(self, direction: str = "read") -> float | None:
+        v = self.read_bps if direction == "read" else self.write_bps
+        return self.bandwidth_bps if v is None else v
+
+    def access(self, direction: str = "read") -> float | None:
+        v = self.read_access_s if direction == "read" else self.write_access_s
+        return self.access_s if v is None else v
 
     def effective_bps(self, access_size_b: float) -> float | None:
         """Rate for accesses of a given size: size / (access time + size / bandwidth)."""
-        if self.bandwidth_bps is None:
+        if self.bps() is None:
             return None
-        return access_size_b / ((self.access_s or 0.0) + access_size_b / self.bandwidth_bps)
+        return access_size_b / ((self.access() or 0.0) + access_size_b / self.bps())
 
 
 @dataclass
@@ -31,6 +56,7 @@ class Compute:
     clock_hz: float
     ops_per_clock: dict[str, float] = field(default_factory=dict)   # per unit, per operation class
     count: int = 1
+    outstanding: int | None = None    # memory requests one unit can have in flight (its miss queue); None = not identified
 
     def rate(self, op_class: str, units: int | None = None) -> float:
         n = self.count if units is None else min(units, self.count)
