@@ -11,7 +11,7 @@ jobs:
   intake:
     name: Check submission and open pull request
     if: contains(github.event.issue.labels.*.name, 'measurement') || contains(github.event.issue.labels.*.name, 'part')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
