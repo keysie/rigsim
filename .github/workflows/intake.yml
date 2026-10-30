@@ -1,5 +1,5 @@
 # Validates a measurement or part submitted through the issue forms and opens a pull request with the file.
-name: intake
+name: Measurement and part intake
 on:
   issues:
     types: [opened, edited]
@@ -9,6 +9,7 @@ permissions:
   pull-requests: write
 jobs:
   intake:
+    name: Check submission and open pull request
     if: contains(github.event.issue.labels.*.name, 'measurement') || contains(github.event.issue.labels.*.name, 'part')
     runs-on: ubuntu-latest
     steps:

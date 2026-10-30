@@ -1,5 +1,5 @@
 # Builds the static site and publishes it with GitHub Pages (Settings → Pages → Source: GitHub Actions).
-name: pages
+name: Website
 on:
   push:
     branches: [main]
@@ -10,6 +10,7 @@ permissions:
   id-token: write
 jobs:
   build:
+    name: Build site
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,6 +25,7 @@ jobs:
       - uses: actions/upload-pages-artifact@v3
         with: { path: frontend/dist }
   deploy:
+    name: Deploy to GitHub Pages
     needs: build
     runs-on: ubuntu-latest
     environment: { name: github-pages, url: "${{ steps.deployment.outputs.page_url }}" }
