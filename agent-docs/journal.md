@@ -29,3 +29,5 @@ by adding a new entry). Rarely read: it explains how the current state came to b
   budget model: 13700K flat over 120 s; 7600U shows two plateaus and a step; the OpenBLAS ladder shows a straggler effect
   beyond the physical cores. The energy calibration's premise (all-core sgemm is power-bound) looks wrong for the 13700K
   at 253 W. Recorded in findings and open-points; no code changed. (measured, analysis by agent)
+- **2026-10-31** — User decision: stick first; the CPU-model rework waits. New standing rule: the briefing's section 0
+  always holds the next steps and the last solved items. (decision)
