@@ -38,8 +38,7 @@ path; may be off by a factor elsewhere. Never overstate this.
    step 2) names the stick as the source of own low-level measurements.
 
 **Why separate** (stated in the repos: different licences and immutability of the data; independent use — the data
-"stands on its own"; the runner and toolkits live only in the benchmark repo since 2026-10-31. *Inferred, confirm with
-user:* keeps validation data out of the model's repo so it cannot silently become fitting data; different release
+"stands on its own"; the runner and toolkits live only in the benchmark repo since 2026-10-31. *Inferred, confirmed by the user 2026-10-31:* keeps validation data out of the model's repo so it cannot silently become fitting data; different release
 cadence; contributors can submit runs without touching simulator code).
 
 Do not confuse: `rigsim/measurements/` = user-submitted **engine** measurements (tokens/s of one engine, via the app's
@@ -74,7 +73,7 @@ bench/                 standalone measurement scripts for engines + the unattend
 measurements/          user-submitted engine measurements (schema.json), intake-validated
 docs/overhaul/         engine.md (the proposal, agreed + open), yardsticks.md, cpu-compute.md, performance-notes.md
 docs/predictions/      predictions written before a bench pass, to be scored
-docs/agent-docs/       this folder
+agent-docs/            this folder (repository root, deliberately outside docs/)
 .github/workflows/     ci.yml (tests on PRs), commits.yml, pages.yml (build+deploy on main), intake.yml (issue forms)
 ```
 

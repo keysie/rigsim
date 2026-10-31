@@ -23,7 +23,7 @@ Tag: *measured* / *docs* (read from a repo document or source) / *inferred* / *d
   `yardsticks/fit_globals.py`, validated by `validate_globals.py`; GPU clock per state from two load classes; GPU code
   built (no data yet, curves flat, marked unmeasured).
 - 2026-10-27: rejected/set aside as too complex: clock from power per operation; per-core link as requests in flight;
-  refresh share; timings; uncore clock (see open-points 15).
+  refresh share; timings; uncore clock (see open-points, "Set aside").
 - 2026-10-29: CPU compute = cycle budgets per core + power budget per package (cpu-compute.md). Energy per op is one
   global constant per microarchitecture set from the stick's cpu-gemm (one core vs all cores). Commit 83da70e: the package
   clock follows its power budget with the f² law.

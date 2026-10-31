@@ -20,4 +20,8 @@ by adding a new entry). Rarely read: it explains how the current state came to b
   (git log, docs)
 - **2026-10-31** — agent-docs created in both repositories (briefing, instructions, open-points, findings, journal) on
   branch `docs/agent-docs`. Open points derived by the agent from reading are tagged [agent] and need the user's
-  confirmation. Reasons for the two-repo split beyond what the repos state are marked *inferred* in the briefing.
+  confirmation.
+- **2026-10-31** — User confirmed (decision): the reasons for the two-repo split in the briefing are correct; changes to
+  agent-docs never need clearing with the user; the pre-journal history here is inferred from the repos (an older chat
+  exists but kept no journal) — from now on the journal is kept. Folder moved from `docs/agent-docs` to `agent-docs/` at the
+  repository root.
