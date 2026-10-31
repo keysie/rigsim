@@ -175,9 +175,10 @@ final simulator needs them, with the evidence that suggested them.
    `power.py`, `rates.py`, `links.py`; general transfers in `machine.py`), no data yet: curves flat and marked
    unmeasured, rates at the spec peak x one default efficiency and marked unmeasured until step 2.
 2. Calibrate and validate on low-level GPU data where possible (clock vs power limit, host-device copies, reference
-   GEMM per precision, VRAM bandwidth). Published data: done (validation only). Own measurements: the hardware
-   bench `bench/hw/` (2026-10-27) — questions aimed at single primitives, containers only, run from the Ansible VM
-   with AI-SERVER's inventory and vault (methodology adapted from the AI-SERVER benchmark queue).
+   GEMM per precision, VRAM bandwidth). Published data: done (validation only). Own measurements: the rigsim
+   hardware stick and its open data, keysie/rigsim-benchmark — questions aimed at single primitives, containers
+   only. (The first version, `bench/hw/` run from the Ansible VM, lived here until 2026-10-31; the runner and
+   toolkits now live only in rigsim-benchmark.)
 3. Build the engine code: the framework only (engine interface, roles and binding, step graphs, state tables, the
    profile), no engines yet.
 4. Take apart one or two popular open-source benchmark tools and model them as engines.
