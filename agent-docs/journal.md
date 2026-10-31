@@ -25,3 +25,7 @@ by adding a new entry). Rarely read: it explains how the current state came to b
   agent-docs never need clearing with the user; the pre-journal history here is inferred from the repos (an older chat
   exists but kept no journal) — from now on the journal is kept. Folder moved from `docs/agent-docs` to `agent-docs/` at the
   repository root.
+- **2026-10-31** — First look at the two newest runs (stick 0.13.1: cpu-gemm-ladder and cpu-power-time) against the CPU
+  budget model: 13700K flat over 120 s; 7600U shows two plateaus and a step; the OpenBLAS ladder shows a straggler effect
+  beyond the physical cores. The energy calibration's premise (all-core sgemm is power-bound) looks wrong for the 13700K
+  at 253 W. Recorded in findings and open-points; no code changed. (measured, analysis by agent)

@@ -6,7 +6,11 @@ Last revised: 2026-10-31.
 
 ## High
 
-1. **Time in the CPU budget model** [user: `docs/overhaul/cpu-compute.md`]. Budgets are static; real CPUs run PL2 for up
+1. **Rework the CPU energy calibration with the new data** [agent, 2026-10-31]: use the board's recorded limits
+   (`powercap.json`) instead of the specified power; do not treat an all-core sgemm shortfall as a clock share when the
+   sampled clock is near maximum (straggler effect on SMT/hybrid parts, see findings); then fit the time behaviour from
+   the 7600U curve (two plateaus). Needs the user's decision on method before any change.
+2. **Time in the CPU budget model** [user: `docs/overhaul/cpu-compute.md`]. Budgets are static; real CPUs run PL2 for up
    to tau (28–56 s), then PL1, and change with temperature. One budget per workload duration is chosen and stated
    for now.
 2. **Engine framework (roadmap step 3)** [user: engine.md §11]: engine interface, roles and binding, step graphs,
