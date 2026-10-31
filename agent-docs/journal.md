@@ -33,3 +33,6 @@ by adding a new entry). Rarely read: it explains how the current state came to b
   always holds the next steps and the last solved items. (decision)
 - **2026-10-31** — User decisions: agent-docs live on `main` only (no docs branches; PR #27 merged onto main, branch
   deleted); branches are cut per component, e.g. all stick fixes in one branch. Rule 7 rewritten accordingly.
+- **2026-10-31** — Direct pushes of agent-docs to `main` are refused by the ruleset (required status "Check Conventional
+  Commits"). Workaround recorded in rule 7 (throwaway ref `agent-docs-sync`, wait for the check, push `main`). Asked the
+  user whether to add a bypass for the repository admin instead.
