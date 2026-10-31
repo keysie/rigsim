@@ -31,3 +31,5 @@ by adding a new entry). Rarely read: it explains how the current state came to b
   at 253 W. Recorded in findings and open-points; no code changed. (measured, analysis by agent)
 - **2026-10-31** — User decision: stick first; the CPU-model rework waits. New standing rule: the briefing's section 0
   always holds the next steps and the last solved items. (decision)
+- **2026-10-31** — User decisions: agent-docs live on `main` only (no docs branches; PR #27 merged onto main, branch
+  deleted); branches are cut per component, e.g. all stick fixes in one branch. Rule 7 rewritten accordingly.

@@ -11,15 +11,15 @@ Keep this section current (instruction 3). Last updated 2026-10-31.
 CPU-model rework below waits for trustworthy stick data.
 
 **Next steps, in order**
-1. User merges the docs PR #27 (first analysis of the 7600U and 13700K runs).
-2. After the stick fixes are merged and verified on a booted stick (rigsim-benchmark PRs #19, #21): new runs with working
-   Blender, ladder and power data.
-3. **Rework the CPU energy calibration** (open-points 1): board limits from `powercap.json` instead of specified power;
+1. Stick fixes merged and verified on a booted stick (rigsim-benchmark: PR #19 merged, PR #21 open; verification needs the
+   user): new runs with working Blender, ladder and power data.
+2. **Rework the CPU energy calibration** (open-points 1): board limits from `powercap.json` instead of specified power;
    no clock share from an all-core shortfall when the sampled clock is near maximum; time behaviour from the 7600U curve.
    Needs the user's decision on the method before any code.
-4. Make the model able to build the 7600U system (`sgemm_at_max` returns None); README and `bench/README.md` cleanup.
+3. Make the model able to build the 7600U system (`sgemm_at_max` returns None); README and `bench/README.md` cleanup.
 
 **Recently solved** (merged, newest first)
+- 2026-10-31 PR #27: first analysis of the 7600U and 13700K runs recorded in agent-docs.
 - 2026-10-31 PR #26: agent-docs added, outside `docs/`.
 - 2026-10-31 PR #25: `bench/hw` removed from rigsim (lives only in rigsim-benchmark).
 - 2026-10-29: CPU compute as cycle and power budgets (core budgets, specified package power with calibrated energy per
