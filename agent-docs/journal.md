@@ -41,3 +41,5 @@ by adding a new entry). Rarely read: it explains how the current state came to b
 - **2026-10-31** — User decision: branches are sprints, and agent-docs live on the branch being worked on (replaces the
   "notes only on main" rule and its `agent-docs-sync` workaround). Rule 7 rewritten. PR #22 (stick fixes, stick 0.13.4)
   merged by the user. New sprint `sprint/stick-data` opened in both repositories.
+- **2026-10-31** — Stick sprint: rigsim-benchmark got a build-time seed self-test (stick 0.13.5) that stops the
+  build when a part is missing. No change in rigsim. (journal of rigsim-benchmark has the details)
