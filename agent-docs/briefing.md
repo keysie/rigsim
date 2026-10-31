@@ -10,9 +10,11 @@ Keep this section current (instruction 3). Last updated 2026-10-31.
 **User priority (2026-10-31): the measurement stick first** (work happens in rigsim-benchmark; see its agent-docs). The
 CPU-model rework below waits for trustworthy stick data.
 
+**Current sprint:** `sprint/stick-data` (both repositories; the work is in rigsim-benchmark, here only notes).
+
 **Next steps, in order**
-1. Stick fixes merged and verified on a booted stick (rigsim-benchmark: PR #19 merged, PR #22 open; verification needs the
-   user): new runs with working Blender, ladder and power data.
+1. Stick fixes (rigsim-benchmark PRs #19, #22, merged) verified on a booted stick (needs the user): new runs with
+   working Blender, ladder and power data.
 2. **Rework the CPU energy calibration** (open-points 1): board limits from `powercap.json` instead of specified power;
    no clock share from an all-core shortfall when the sampled clock is near maximum; time behaviour from the 7600U curve.
    Needs the user's decision on the method before any code.
