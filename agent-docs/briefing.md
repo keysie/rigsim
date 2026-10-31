@@ -11,7 +11,7 @@ Keep this section current (instruction 3). Last updated 2026-10-31.
 CPU-model rework below waits for trustworthy stick data.
 
 **Next steps, in order**
-1. Stick fixes merged and verified on a booted stick (rigsim-benchmark: PR #19 merged, PR #21 open; verification needs the
+1. Stick fixes merged and verified on a booted stick (rigsim-benchmark: PR #19 merged, PR #22 open; verification needs the
    user): new runs with working Blender, ladder and power data.
 2. **Rework the CPU energy calibration** (open-points 1): board limits from `powercap.json` instead of specified power;
    no clock share from an all-core shortfall when the sampled clock is near maximum; time behaviour from the 7600U curve.
